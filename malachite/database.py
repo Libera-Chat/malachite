@@ -34,10 +34,17 @@ class MxblEntry:
 
     def __str__(self) -> str:
         now = datetime.now(UTC)
-        last_hit = pretty_delta(now - self.last_hit) if self.last_hit is not None else "never"
-        active = "ENABLED" if self.active else "DISABLED"
-        return (f"#{self.id}: {self.pattern} added {pretty_delta(now - self.added)} by {self.added_by}"
-                f" with {self.hits} hits (last hit: {last_hit}) [{active}]")
+        if self.last_hit is not None:
+            last_hit = now - self.last_hit
+            if last_hit.total_seconds() < (6 * 60 * 60):
+                last_hit = f"\x0307{pretty_delta(last_hit)}\x03"
+            else:
+                last_hit = pretty_delta(last_hit)
+        else:
+            last_hit = "\x0312never\x03"
+        active = "\x0303ENABLED\x03" if self.active else "\x0305DISABLED\x03"
+        return (f"#{self.id}: \x02{self.pattern}\x02 added {pretty_delta(now - self.added)} by \x02{self.added_by}\x02"
+                f" with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
 
     @property
     def full_reason(self) -> str:

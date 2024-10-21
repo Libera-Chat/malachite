@@ -199,7 +199,7 @@ class MalachiteServer(Server):
                 hostmask = f"{whois.nickname}!{whois.username}@{whois.hostname}"
             else:
                 hostmask = "<Unknown user>"
-            await self.log(f"BAD: {hostmask} registered {account} with *@{domain} ({found.full_reason})")
+            await self.log(f"\x0303BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02 ({found.full_reason})")
             if drop:
                 await self.send(build("NOTICE", [
                     account, ("Your account has been dropped, please register it again with a valid email"

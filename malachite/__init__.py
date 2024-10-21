@@ -1,3 +1,5 @@
+import ipaddress
+
 from dns.asyncresolver import Resolver
 from dns.rdatatype import MX, A, AAAA
 
@@ -80,13 +82,20 @@ class MalachiteServer(Server):
         """
         try:
             pat = args[0]
-            # TODO: if looks like domain, make fqdn
         except IndexError:
             return "missing argument: <ip|domain>"
         try:
             reason = " ".join(args[1:])
         except IndexError:
             return "missing argument: <reason>"
+
+        try:
+            ipaddress.ip_address(pat)
+        except ValueError:
+            # not an ip address, must be a domain... ensure it's an FQDN
+            if not pat.endswith("."):
+                pat += "."
+
         id = await self.database.mxbl.add(pat, reason, True, caller.oper)
         return f"added mxbl entry #{id}"
 

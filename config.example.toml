@@ -1,0 +1,26 @@
+[settings]
+timeout = 5
+
+[irc]
+server = "irc.libera.chat"
+nickname = "malachite"
+username = "malachite"
+realname = "malachite"
+channels = ["####malachite"]
+log = "####malachite-log"
+
+[sasl]
+username = "malachite"
+password = "hunter2"
+
+[oper]
+name = "malachite"
+pass = "hunter3"
+cert = "path/to/cert.pub"
+key = "path/to/cert.key"
+
+[database]
+user = "malachite"
+pass = "hunter4"
+host = "localhost"
+name = "malachite"

@@ -1,0 +1,16 @@
+BEGIN;
+
+CREATE TABLE mxbl (
+    id SERIAL PRIMARY KEY,
+    pattern TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    active BOOLEAN NOT NULL,
+    added TIMESTAMP WITH TIME ZONE NOT NULL,
+    added_by TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    last_hit TIMESTAMP WITH TIME ZONE
+);
+
+-- TODO: indices
+
+COMMIT;

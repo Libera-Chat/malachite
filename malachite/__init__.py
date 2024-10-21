@@ -13,6 +13,8 @@ from .irc import Caller, command, on_message, Server
 
 NICKSERV = "NickServ"
 
+__version__ = "0.1.0"
+
 
 class MalachiteServer(Server):
     def __init__(self, bot: ircrobots.Bot, name: str, config: Config, database: Database):
@@ -40,6 +42,21 @@ class MalachiteServer(Server):
         print("[*] opered up")
         # disable snotes, they aren't necessary
         await self.send(build("MODE", [self.nickname, "-s"]))
+
+    @on_message("PRIVMSG", lambda ln: ln.source is not None and len(ln.params) > 0 and ln.params[-1].startswith("\x01"))
+    async def on_ctcp(self, line: Line):
+        query = line.params[-1].strip("\x01").split()
+        if not query:
+            return
+        command = query[0].upper()
+        match command:
+            case "VERSION":
+                resp = f"VERSION malachite v{__version__}"
+            case _:
+                resp = None
+
+        if resp:
+            await self.send(build("NOTICE", [line.hostmask.nickname, f"\x01{resp}\x01"]))
 
     @on_message("PRIVMSG", lambda ln: ln.source is not None and ln.hostmask.nickname == NICKSERV)
     async def on_nickserv(self, line: Line):

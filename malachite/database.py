@@ -57,7 +57,7 @@ class Table:
 
 
 class MxblTable(Table):
-    async def get(self, id: int) -> MxblEntry:
+    async def get(self, id: int) -> MxblEntry | None:
         query = """
             SELECT *
             FROM mxbl
@@ -65,7 +65,8 @@ class MxblTable(Table):
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(query, id)
-        return MxblEntry(*row)
+        if row is not None:
+            return MxblEntry(*row)
 
     async def match_enabled(self, search: str) -> MxblEntry | None:
         query = """

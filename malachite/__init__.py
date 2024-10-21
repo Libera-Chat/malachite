@@ -97,7 +97,9 @@ class MalachiteServer(Server):
                 pat += "."
 
         id = await self.database.mxbl.add(pat, reason, True, caller.oper)
-        return f"added mxbl entry #{id}"
+        if id is not None:
+            return f"added mxbl entry #{id}"
+        return "adding mxbl entry failed"
 
     @command("DEL")
     async def _del(self, _: Caller, args: list[str]):
@@ -113,7 +115,9 @@ class MalachiteServer(Server):
             return "missing argument: <id>"
 
         ret = await self.database.mxbl.delete(id)
-        return f"removed mxbl entry #{ret}"
+        if ret is not None:
+            return f"removed mxbl entry #{ret}"
+        return f"no entry found for id: {id}"
 
     @command("GET")
     async def _get(self, _: Caller, args: list[str]):
@@ -128,7 +132,9 @@ class MalachiteServer(Server):
             return "missing argument: <id>"
 
         ret = await self.database.mxbl.get(id)
-        return str(ret)
+        if ret is not None:
+            return str(ret)
+        return f"no entry found for id: {id}"
 
     @command("LIST")
     async def _list(self, _: Caller, args: list[str]):
@@ -146,7 +152,9 @@ class MalachiteServer(Server):
         except IndexError:
             search = "*"
         rows = await self.database.mxbl.list_all(limit, search)
-        return [str(r) for r in rows]
+        if rows:
+            return [str(r) for r in rows]
+        return "no entries found"
 
     @command("TOGGLE")
     async def _toggle(self, _: Caller, args: list[str]):
@@ -158,8 +166,10 @@ class MalachiteServer(Server):
         except ValueError:
             return "invalid id (not an integer)"
         enabled = await self.database.mxbl.toggle(id)
-        en_str = "enabled" if enabled else "disabled"
-        return f"mxbl entry #{id} was {en_str}"
+        if enabled is not None:
+            en_str = "enabled" if enabled else "disabled"
+            return f"mxbl entry #{id} was {en_str}"
+        return f"no entry found for id: {id}"
 
     # }}}
 

@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -58,6 +59,9 @@ class Table:
 
 class MxblTable(Table):
     async def get(self, id: int) -> MxblEntry | None:
+        """
+        get one entry by id
+        """
         query = """
             SELECT *
             FROM mxbl
@@ -69,6 +73,9 @@ class MxblTable(Table):
             return MxblEntry(*row)
 
     async def find_active(self, search: str) -> MxblEntry | None:
+        """
+        postgres glob search all active entries
+        """
         query = """
             SELECT *
             FROM mxbl
@@ -82,6 +89,9 @@ class MxblTable(Table):
             return MxblEntry(*row)
 
     async def list_all(self, limit: int = 0, search: str = "") -> list[MxblEntry]:
+        """
+        list all entries up to limit (optional, default all) with an optional postgres glob filter
+        """
         query = """
             SELECT *
             FROM mxbl
@@ -95,6 +105,9 @@ class MxblTable(Table):
         return [MxblEntry(*row) for row in rows]
 
     async def add(self, pattern: str, reason: str, active: bool, added_by: str) -> int:
+        """
+        add an entry
+        """
         query = """
             INSERT INTO mxbl
             (pattern, reason, active, added, added_by)
@@ -106,6 +119,9 @@ class MxblTable(Table):
             return await conn.fetchval(query, *args)
 
     async def delete(self, id: int) -> int:
+        """
+        delete an entry
+        """
         query = """
             DELETE FROM mxbl
             WHERE id = $1
@@ -115,6 +131,9 @@ class MxblTable(Table):
             return await conn.fetchval(query, id)
 
     async def edit_pattern(self, id: int, pattern: str) -> int:
+        """
+        update the pattern of an entry
+        """
         query = """
             UPDATE mxbl
             SET pattern = $2
@@ -125,6 +144,9 @@ class MxblTable(Table):
             return await conn.fetchval(query, id, pattern)
 
     async def edit_reason(self, id: int, reason: str) -> int:
+        """
+        update the reason of an entry
+        """
         query = """
             UPDATE mxbl
             SET reason = $2
@@ -135,6 +157,9 @@ class MxblTable(Table):
             return await conn.fetchval(query, id, reason)
 
     async def toggle(self, id: int) -> bool:
+        """
+        toggle a pattern enabled/disabled by id
+        """
         query = """
             UPDATE mxbl
             SET active = NOT active
@@ -145,6 +170,9 @@ class MxblTable(Table):
             return await conn.fetchval(query, id)
 
     async def hit(self, id: int) -> int:
+        """
+        increment the hit counter and update the last_hit timestamp for an entry
+        """
         query = """
             UPDATE mxbl
             SET hits = hits + 1, last_hit = NOW()::TIMESTAMP
@@ -163,3 +191,14 @@ class Database:
     async def connect(cls, user: str, password: str | None, host: str | None, database: str | None):
         pool = await asyncpg.create_pool(user=user, password=password, host=host, database=database)
         return cls(pool)  # type: ignore
+
+    def __getattr__(self, attr):
+        """
+        proxy the methods on MxblTable and wrap them in asyncio tasks
+        to make awaiting database queries non-blocking
+        """
+        if hasattr(self.mxbl, attr):
+            def wrapper(*args, **kwargs):
+                return asyncio.create_task(getattr(self.mxbl, attr)(*args, **kwargs))
+            return wrapper
+        raise AttributeError(attr)

@@ -1,3 +1,4 @@
+import asyncio
 import ipaddress
 
 from dns.asyncresolver import Resolver
@@ -27,24 +28,26 @@ class MalachiteServer(Server):
 
     @on_message(RPL_WELCOME)
     async def on_welcome(self, _):
-        # oper up
-        # await self.send(build("OPER", [self._config.oper.user, self._config.oper.password]))
+        """oper up"""
+        # self.send(build("OPER", [self._config.oper.user, self._config.oper.password]))
         ...
 
     @on_message(RPL_ISUPPORT)
     async def on_isupport(self, _):
+        """finish initialisation and print a message to console"""
         if not self._init and self.isupport.network:
             print(f"[*] connected to {self.isupport.network} as {self.nickname}")
             self._init = True
 
     @on_message(RPL_YOUREOPER)
     async def on_youreoper(self, _):
+        """disable snotes, they aren't necessary"""
         print("[*] opered up")
-        # disable snotes, they aren't necessary
-        await self.send(build("MODE", [self.nickname, "-s"]))
+        self.send(build("MODE", [self.nickname, "-s"]))
 
     @on_message("PRIVMSG", lambda ln: ln.source is not None and len(ln.params) > 0 and ln.params[-1].startswith("\x01"))
     async def on_ctcp(self, line: Line):
+        """respond to CTCP queries"""
         query = line.params[-1].strip("\x01").split()
         if not query:
             return
@@ -56,10 +59,11 @@ class MalachiteServer(Server):
                 resp = None
 
         if resp:
-            await self.send(build("NOTICE", [line.hostmask.nickname, f"\x01{resp}\x01"]))
+            self.send(build("NOTICE", [line.hostmask.nickname, f"\x01{resp}\x01"]))
 
     @on_message("PRIVMSG", lambda ln: ln.source is not None and ln.hostmask.nickname == NICKSERV)
     async def on_nickserv(self, line: Line):
+        """parse and do actions upon NickServ messages"""
         msg = line.params[-1].split()
         if "REGISTER:" in msg:
             account = msg[0]
@@ -81,6 +85,7 @@ class MalachiteServer(Server):
     async def _help(self, _: Caller, args: list[str]):
         """
         usage: HELP [command]
+          show usage information about a command
         """
         if not args:
             return self._cmd_handlers["help"].help + "\n  available commands: " + ", ".join(self._cmd_handlers.keys())
@@ -113,7 +118,7 @@ class MalachiteServer(Server):
             if not pat.endswith("."):
                 pat += "."
 
-        id = await self.database.mxbl.add(pat, reason, True, caller.oper)
+        id = await self.database.add(pat, reason, True, caller.oper)
         if id is not None:
             return f"added mxbl entry #{id}"
         return "adding mxbl entry failed"
@@ -131,7 +136,7 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <id>"
 
-        ret = await self.database.mxbl.delete(id)
+        ret = await self.database.delete(id)
         if ret is not None:
             return f"removed mxbl entry #{ret}"
         return f"no entry found for id: {id}"
@@ -140,6 +145,7 @@ class MalachiteServer(Server):
     async def _get(self, _: Caller, args: list[str]):
         """
         usage: GET <id>
+          get information about a specific mxbl entry
         """
         try:
             id = int(args[0])
@@ -148,7 +154,7 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <id>"
 
-        ret = await self.database.mxbl.get(id)
+        ret = await self.database.get(id)
         if ret is not None:
             return str(ret)
         return f"no entry found for id: {id}"
@@ -157,6 +163,7 @@ class MalachiteServer(Server):
     async def _list(self, _: Caller, args: list[str]):
         """
         usage: LIST [limit = 0] [glob]
+          list mxbl entries up to limit (default: no limit), optionally filtering with a glob pattern
         """
         try:
             limit = int(args[0])
@@ -168,7 +175,7 @@ class MalachiteServer(Server):
             search = args[1]
         except IndexError:
             search = "*"
-        rows = await self.database.mxbl.list_all(limit, search)
+        rows = await self.database.list_all(limit, search)
         if rows:
             return [str(r) for r in rows]
         return "no entries found"
@@ -177,6 +184,7 @@ class MalachiteServer(Server):
     async def _toggle(self, _: Caller, args: list[str]):
         """
         usage: TOGGLE <id>
+          enable or disable an entry
         """
         try:
             id = int(args[0])
@@ -184,7 +192,7 @@ class MalachiteServer(Server):
             return "invalid id (not an integer)"
         except IndexError:
             return "missing argument: <id>"
-        enabled = await self.database.mxbl.toggle(id)
+        enabled = await self.database.toggle(id)
         if enabled is not None:
             en_str = "enabled" if enabled else "disabled"
             return f"mxbl entry #{id} was {en_str}"
@@ -194,6 +202,7 @@ class MalachiteServer(Server):
     async def _edit_pattern(self, _: Caller, args: list[str]):
         """
         usage: EDITPATTERN <id> <ip|domain>
+          update the ip or domain for a pattern by id
         """
         try:
             id = int(args[0])
@@ -213,7 +222,7 @@ class MalachiteServer(Server):
             if not pat.endswith("."):
                 pat += "."
 
-        id = await self.database.mxbl.edit_pattern(id, pat)
+        id = await self.database.edit_pattern(id, pat)
         if id is not None:
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -222,6 +231,7 @@ class MalachiteServer(Server):
     async def _edit_reason(self, _: Caller, args: list[str]):
         """
         usage: EDITREASON <id> <reason>
+          update the reason for a pattern by id
         """
         try:
             id = int(args[0])
@@ -234,7 +244,7 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <reason>"
 
-        id = await self.database.mxbl.edit_reason(id, reason)
+        id = await self.database.edit_reason(id, reason)
         if id is not None:
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -242,19 +252,21 @@ class MalachiteServer(Server):
     # }}}
 
     async def _check_domain(self, domain: str, account: str, drop: bool):
-        # check if domain matches any pattern
-        # if not found, resolve MX, A, and AAAA for domain
-        # if MX points to domain, check it against patterns and resolve A and AAAA
-        # if any record matches any pattern, found
-        # if found: add *@domain to services badmail
-        #     if new reg, fdrop and send notice
-        #     if email change, freeze
-        if not (found := await self.database.mxbl.find_active(domain)):
+        """
+        check if domain matches any pattern
+        if not found, resolve MX, A, and AAAA for domain
+        if MX points to domain, check it against patterns and resolve A and AAAA
+        if any record matches any pattern, found
+        if found: add *@domain to services badmail
+            if new reg, fdrop and send notice
+            if email change, freeze
+        """
+        if not (found := await self.database.find_active(domain)):
             queue = [(domain, MX), (domain, A), (domain, AAAA)]
             while queue:
                 domain, ty = queue.pop(0)
                 try:
-                    resp = await self.resolver.resolve(qname=domain, rdtype=ty)
+                    resp = await asyncio.create_task(self.resolver.resolve(qname=domain, rdtype=ty))
                 except Exception:
                     pass
                 else:
@@ -268,18 +280,18 @@ class MalachiteServer(Server):
                         else:
                             continue
 
-                        if (found := await self.database.mxbl.find_active(rec_name)):
+                        if (found := await self.database.find_active(rec_name)):
                             break
                     if found:
                         break
 
         if found:
-            await self.database.mxbl.hit(found.id)
-            await self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
+            await self.database.hit(found.id)
+            self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
             if drop:
-                await self.send_message(NICKSERV, f"FDROP {account}")
+                self.send_message(NICKSERV, f"FDROP {account}")
             else:
-                await self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})"))
+                self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})"))
 
             whois = await self.send_whois(account)
             if whois:
@@ -287,13 +299,13 @@ class MalachiteServer(Server):
             else:
                 hostmask = "<Unknown user>"
             if drop:
-                await self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
-                               f" (\x1D{found.full_reason}\x1D)")
+                self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
+                         f" (\x1D{found.full_reason}\x1D)")
             else:
-                await self.log(f"\x0305BAD\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
-                               f" (\x1D{found.full_reason}\x1D)")
+                self.log(f"\x0305BAD\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
+                         f" (\x1D{found.full_reason}\x1D)")
             if drop:
-                await self.send(build("NOTICE", [
+                self.send(build("NOTICE", [
                     account, ("Your account has been dropped, please register it again with a valid email"
                               " address (no disposable/temporary email)")
                 ]))

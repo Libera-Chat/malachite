@@ -1,8 +1,9 @@
 import asyncio
 import inspect
 import shlex
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, TypeAlias
 
 import ircrobots
 from ircrobots import ircv3
@@ -21,7 +22,7 @@ class Caller:
     oper: str
 
 
-type MsgHandler = Callable[[Any, Line], Coroutine[Any, Any, None]]
+MsgHandler: TypeAlias = Callable[[Any, Line], Coroutine[Any, Any, None]]
 
 class OnMessage:
     def __init__(self, command: str, predicate: Callable[[Line], bool] | None = None):
@@ -42,7 +43,7 @@ class OnMessage:
 on_message = OnMessage
 
 
-type CmdHandler = Callable[[Any, Caller, list[str] | str], Coroutine[Any, Any, str]]
+CmdHandler: TypeAlias = Callable[[Any, Caller, list[str] | str], Coroutine[Any, Any, str]]
 
 class Command:
     def __init__(self, name: str):
@@ -87,11 +88,17 @@ class Server(ircrobots.Server):
         # turn off throttling
         pass
 
-    async def log(self, text: str):
+    def log(self, text: str):
+        """
+        send a message to the log channel, if configured
+        """
         if self._config.log:
-            await self.send_message(self._config.log, text)
+            self.send_message(self._config.log, text)
 
     async def line_read(self, line: Line):
+        """
+        read a line from irc and dispatch the relevant handlers
+        """
         handlers = [h for h in self._msg_handlers
                     if line.command == h.command and h.predicate(line)]
         ret = await asyncio.gather(*(h.run(self, line) for h in handlers), return_exceptions=True)
@@ -101,6 +108,9 @@ class Server(ircrobots.Server):
 
     @on_message("PRIVMSG", lambda ln: ln.source is not None)
     async def on_command(self, line: Line):
+        """
+        try to process and respond to a command
+        """
         if self.is_me(line.hostmask.nickname):
             return
 
@@ -134,7 +144,7 @@ class Server(ircrobots.Server):
         try:
             args = shlex.split(sargs)
         except ValueError as e:
-            await self.send(build("NOTICE", [target, f"shlex failure: {str(e)}"]))
+            self.send(build("NOTICE", [target, f"shlex failure: {str(e)}"]))
             return
 
         try:

@@ -26,6 +26,15 @@ MsgHandler: TypeAlias = Callable[[Any, Line], Coroutine[Any, Any, None]]
 
 class OnMessage:
     def __init__(self, command: str, predicate: Callable[[Line], bool] | None = None):
+        """
+        This class should be used as a decorator: @on_message(irc_command, optional_predicate).
+        This will register a method of Server as a message handler. On each received
+        irc message, message handlers will be filtered by the command and predicate,
+        then run concurrently in asyncio.gather()ed tasks. The predicate can only filter
+        based on the line itself, so some additional filter may be required within the
+        handler itself. The irc command name is case-insensitive. Message handlers should
+        be coroutines and receive the server object and the line as function arguments.
+        """
         self.command = command.upper()
         self.predicate = predicate if predicate is not None else lambda _: True
 
@@ -47,6 +56,16 @@ CmdHandler: TypeAlias = Callable[[Any, Caller, list[str] | str], Coroutine[Any, 
 
 class Command:
     def __init__(self, name: str):
+        """
+        This class should be used as a decorator: @command(command_name).
+        This will register a method of Server as a command handler. On each
+        received irc message, the Server.on_command() message handler will
+        try to match each received command to a handler and run that handler.
+        Commands are accepted in the formats "<nick>: <command>" and similar,
+        or by any private message. Command names are case-insensitive.
+        Command handlers should be coroutines and receive the server object,
+        the command's caller, and a list of string arguments as function arguments.
+        """
         self.name = name.lower()
 
     def __call__(self, handler):

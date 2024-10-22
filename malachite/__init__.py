@@ -145,7 +145,7 @@ class MalachiteServer(Server):
     async def _get(self, _: Caller, args: list[str]):
         """
         usage: GET <id>
-          get information about a specific mxbl entry
+          get information about an entry
         """
         try:
             id = int(args[0])
@@ -202,7 +202,7 @@ class MalachiteServer(Server):
     async def _edit_pattern(self, _: Caller, args: list[str]):
         """
         usage: EDITPATTERN <id> <ip|domain>
-          update the ip or domain for a pattern by id
+          update the ip or domain for an entry by id
         """
         try:
             id = int(args[0])
@@ -231,7 +231,7 @@ class MalachiteServer(Server):
     async def _edit_reason(self, _: Caller, args: list[str]):
         """
         usage: EDITREASON <id> <reason>
-          update the reason for a pattern by id
+          update the reason for an entry by id
         """
         try:
             id = int(args[0])
@@ -253,10 +253,10 @@ class MalachiteServer(Server):
 
     async def _check_domain(self, domain: str, account: str, drop: bool):
         """
-        check if domain matches any pattern
+        check if domain matches any entry
         if not found, resolve MX, A, and AAAA for domain
-        if MX points to domain, check it against patterns and resolve A and AAAA
-        if any record matches any pattern, found
+        if MX points to domain, check it against entries and resolve A and AAAA
+        if any record matches any entry, found
         if found: add *@domain to services badmail
             if new reg, fdrop and send notice
             if email change, freeze

@@ -41,19 +41,19 @@ usage: DEL <id>
 **EDITPATTERN**
 ```
 usage: EDITPATTERN <id> <ip|domain>
-  update the ip or domain for a pattern by id
+  update the ip or domain for an entry by id
 ```
 
 **EDITREASON**
 ```
 usage: EDITREASON <id> <reason>
-  update the reason for a pattern by id
+  update the reason for an entry by id
 ```
 
 **GET**
 ```
 usage: GET <id>
-  get information about a specific mxbl entry
+  get information about an entry
 ```
 
 **HELP**

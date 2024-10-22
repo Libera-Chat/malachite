@@ -26,4 +26,51 @@ python3 -m malachite config.toml
 
 ## Commands
 
-TODO
+**ADD**
+```
+usage: ADD <ip|domain> <reason>
+  add an ip or domain to the mxbl
+```
+
+**DEL**
+```
+usage: DEL <id>
+  remove an ip or domain from the mxbl
+```
+
+**EDITPATTERN**
+```
+usage: EDITPATTERN <id> <ip|domain>
+  update the ip or domain for a pattern by id
+```
+
+**EDITREASON**
+```
+usage: EDITREASON <id> <reason>
+  update the reason for a pattern by id
+```
+
+**GET**
+```
+usage: GET <id>
+  get information about a specific mxbl entry
+```
+
+**HELP**
+```
+usage: HELP [command]
+  show usage information about a command
+```
+
+**LIST**
+```
+usage: LIST [limit = 0] [glob]
+  list mxbl entries up to limit (default: no limit),
+  optionally filtering with a glob pattern
+```
+
+**TOGGLE**
+```
+usage: TOGGLE <id>
+  enable or disable an entry
+```

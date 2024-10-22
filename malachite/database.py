@@ -43,8 +43,8 @@ class MxblEntry:
         else:
             last_hit = "\x0312never\x03"
         active = "\x0303ENABLED\x03" if self.active else "\x0305DISABLED\x03"
-        return (f"#{self.id}: \x02{self.pattern}\x02 added {pretty_delta(now - self.added)} by \x02{self.added_by}\x02"
-                f" with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
+        return (f"#{self.id}: \x02{self.pattern}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
+                f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
 
     @property
     def full_reason(self) -> str:
@@ -113,6 +113,26 @@ class MxblTable(Table):
         """
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, id)
+
+    async def edit_pattern(self, id: int, pattern: str) -> int:
+        query = """
+            UPDATE mxbl
+            SET pattern = $2
+            WHERE id = $1
+            RETURNING id
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(query, id, pattern)
+
+    async def edit_reason(self, id: int, reason: str) -> int:
+        query = """
+            UPDATE mxbl
+            SET reason = $2
+            WHERE id = $1
+            RETURNING id
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(query, id, reason)
 
     async def toggle(self, id: int) -> bool:
         query = """

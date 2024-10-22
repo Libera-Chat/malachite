@@ -143,6 +143,6 @@ class Server(ircrobots.Server):
             print(f"[!] exception encountered in command handler {command!r}: {e}")
         else:
             if isinstance(outs, str):
-                outs = outs.splitlines()
+                outs = outs.strip().split("\n")
             for out in outs:
                 await self.send(build("NOTICE", [target, out]))

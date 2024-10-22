@@ -11,7 +11,7 @@ from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
 
-NICKSERV = "NickServ"
+NICKSERV = "cattenoire"
 
 __version__ = "0.1.0"
 
@@ -182,11 +182,62 @@ class MalachiteServer(Server):
             id = int(args[0])
         except ValueError:
             return "invalid id (not an integer)"
+        except IndexError:
+            return "missing argument: <id>"
         enabled = await self.database.mxbl.toggle(id)
         if enabled is not None:
             en_str = "enabled" if enabled else "disabled"
             return f"mxbl entry #{id} was {en_str}"
         return f"no entry found for id: {id}"
+
+    @command("EDITPATTERN")
+    async def _edit_pattern(self, _: Caller, args: list[str]):
+        """
+        usage: EDITPATTERN <id> <ip|domain>
+        """
+        try:
+            id = int(args[0])
+        except ValueError:
+            return "invalid id (not an integer)"
+        except IndexError:
+            return "missing argument: <id>"
+        try:
+            pat = args[1]
+        except IndexError:
+            return "missing argument: <ip|domain>"
+
+        try:
+            ipaddress.ip_address(pat)
+        except ValueError:
+            # not an ip address, must be a domain... ensure it's an FQDN
+            if not pat.endswith("."):
+                pat += "."
+
+        id = await self.database.mxbl.edit_pattern(id, pat)
+        if id is not None:
+            return f"updated mxbl entry #{id}"
+        return "updating mxbl entry failed"
+
+    @command("EDITREASON")
+    async def _edit_reason(self, _: Caller, args: list[str]):
+        """
+        usage: EDITREASON <id> <reason>
+        """
+        try:
+            id = int(args[0])
+        except ValueError:
+            return "invalid id (not an integer)"
+        except IndexError:
+            return "missing argument: <id>"
+        try:
+            reason = " ".join(args[1:])
+        except IndexError:
+            return "missing argument: <reason>"
+
+        id = await self.database.mxbl.edit_reason(id, reason)
+        if id is not None:
+            return f"updated mxbl entry #{id}"
+        return "updating mxbl entry failed"
 
     # }}}
 
@@ -228,14 +279,19 @@ class MalachiteServer(Server):
             if drop:
                 await self.send_message(NICKSERV, f"FDROP {account}")
             else:
-                await self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to {domain} ({found.full_reason})"))
+                await self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})"))
 
             whois = await self.send_whois(account)
             if whois:
                 hostmask = f"{whois.nickname}!{whois.username}@{whois.hostname}"
             else:
                 hostmask = "<Unknown user>"
-            await self.log(f"\x0303BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02 ({found.full_reason})")
+            if drop:
+                await self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
+                               f" (\x1D{found.full_reason}\x1D)")
+            else:
+                await self.log(f"\x0305BAD\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
+                               f" (\x1D{found.full_reason}\x1D)")
             if drop:
                 await self.send(build("NOTICE", [
                     account, ("Your account has been dropped, please register it again with a valid email"

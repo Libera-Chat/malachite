@@ -11,6 +11,7 @@ CREATE TABLE mxbl (
     last_hit TIMESTAMP WITH TIME ZONE
 );
 
--- TODO: indices
+-- for database.mxbl.find_active()
+CREATE INDEX mxbl_pattern ON mxbl(pattern);
 
 COMMIT;

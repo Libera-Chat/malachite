@@ -68,7 +68,7 @@ class MxblTable(Table):
         if row is not None:
             return MxblEntry(*row)
 
-    async def match_enabled(self, search: str) -> MxblEntry | None:
+    async def find_active(self, search: str) -> MxblEntry | None:
         query = """
             SELECT *
             FROM mxbl

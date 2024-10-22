@@ -198,7 +198,7 @@ class MalachiteServer(Server):
         # if found: add *@domain to services badmail
         #     if new reg, fdrop and send notice
         #     if email change, freeze
-        if not (found := await self.database.mxbl.match_enabled(domain)):
+        if not (found := await self.database.mxbl.find_active(domain)):
             queue = [(domain, MX), (domain, A), (domain, AAAA)]
             while queue:
                 domain, ty = queue.pop(0)
@@ -217,7 +217,7 @@ class MalachiteServer(Server):
                         else:
                             continue
 
-                        if (found := await self.database.mxbl.match_enabled(rec_name)):
+                        if (found := await self.database.mxbl.find_active(rec_name)):
                             break
                     if found:
                         break

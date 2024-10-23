@@ -72,5 +72,5 @@ usage: LIST [limit = 0] [glob]
 **TOGGLE**
 ```
 usage: TOGGLE <id>
-  enable or disable an entry
+  make an entry active or warn
 ```

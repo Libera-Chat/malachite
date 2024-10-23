@@ -43,7 +43,7 @@ class MxblEntry:
                 last_hit = pretty_delta(last_hit)
         else:
             last_hit = "\x0312never\x03"
-        active = "\x0303ENABLED\x03" if self.active else "\x0305DISABLED\x03"
+        active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"
         return (f"#{self.id}: \x02{self.pattern}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
                 f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
 
@@ -158,7 +158,7 @@ class MxblTable(Table):
 
     async def toggle(self, id: int) -> bool:
         """
-        toggle a pattern enabled/disabled by id
+        toggle a pattern active/warn by id
         """
         query = """
             UPDATE mxbl

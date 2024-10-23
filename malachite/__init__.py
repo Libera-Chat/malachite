@@ -183,7 +183,7 @@ class MalachiteServer(Server):
     async def _toggle(self, _: Caller, args: list[str]):
         """
         usage: TOGGLE <id>
-          enable or disable an entry
+          make an entry active or warn
         """
         try:
             id = int(args[0])
@@ -191,10 +191,10 @@ class MalachiteServer(Server):
             return "invalid id (not an integer)"
         except IndexError:
             return "missing argument: <id>"
-        enabled = await self.database.toggle(id)
-        if enabled is not None:
-            en_str = "enabled" if enabled else "disabled"
-            return f"mxbl entry #{id} was {en_str}"
+        active = await self.database.toggle(id)
+        if active is not None:
+            en_str = "active" if active else "warn"
+            return f"mxbl entry #{id} was made {en_str}"
         return f"no entry found for id: {id}"
 
     @command("EDITPATTERN")

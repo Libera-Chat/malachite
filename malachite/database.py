@@ -72,14 +72,14 @@ class MxblTable(Table):
         if row is not None:
             return MxblEntry(*row)
 
-    async def find_active(self, search: str) -> MxblEntry | None:
+    async def find(self, search: str) -> MxblEntry | None:
         """
-        postgres glob search all active entries
+        postgres glob search all entries
         """
         query = """
             SELECT *
             FROM mxbl
-            WHERE pattern = $1 AND active = true
+            WHERE pattern = $1
             ORDER BY id
             LIMIT 1
         """

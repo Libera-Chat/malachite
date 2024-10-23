@@ -260,7 +260,7 @@ class MalachiteServer(Server):
             if new reg, fdrop and send notice
             if email change, freeze
         """
-        if not (found := await self.database.find_active(domain)):
+        if not (found := await self.database.find(domain)):
             queue = [(domain, MX), (domain, A), (domain, AAAA)]
             while queue:
                 domain, ty = queue.pop(0)
@@ -279,35 +279,45 @@ class MalachiteServer(Server):
                         else:
                             continue
 
-                        if (found := await self.database.find_active(rec_name)):
+                        if (found := await self.database.find(rec_name)):
                             break
                     if found:
                         break
 
         if found:
             await self.database.hit(found.id)
-            self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
-            if drop:
-                self.send_message(NICKSERV, f"FDROP {account}")
-            else:
-                self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})"))
+            if found.active:
+                self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
+                if drop:
+                    self.send_message(NICKSERV, f"FDROP {account}")
+                else:
+                    self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})"))
 
             whois = await self.send_whois(account)
             if whois:
                 hostmask = f"{whois.nickname}!{whois.username}@{whois.hostname}"
             else:
-                hostmask = "<Unknown user>"
-            if drop:
-                self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
-                         f" (\x1D{found.full_reason}\x1D)")
+                hostmask = "<unknown user>"
+
+            if found.active:
+                if drop:
+                    self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
+                             f" (\x1D{found.full_reason}\x1D)")
+                    self.send(build("NOTICE", [
+                        account, ("Your account has been dropped, please register it again with a valid email"
+                                  " address (no disposable/temporary email)")
+                    ]))
+                else:
+                    self.log(f"\x0305BAD\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
+                             f" (\x1D{found.full_reason}\x1D)")
             else:
-                self.log(f"\x0305BAD\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
-                         f" (\x1D{found.full_reason}\x1D)")
-            if drop:
-                self.send(build("NOTICE", [
-                    account, ("Your account has been dropped, please register it again with a valid email"
-                              " address (no disposable/temporary email)")
-                ]))
+                if drop:
+                    self.log(f"\x0307WARN\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
+                             f" (\x1D{found.full_reason}\x1D)")
+                else:
+                    self.log(f"\x0307WARN\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
+                             f" (\x1D{found.full_reason}\x1D)")
+
 
 
 class Malachite(ircrobots.Bot):

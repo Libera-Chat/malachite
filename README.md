@@ -69,6 +69,15 @@ usage: LIST [limit = 0] [glob]
   optionally filtering with a glob pattern
 ```
 
+**SETTINGS**
+```
+usage: SETTINGS <GET|GETALL|SET> [name] [value]
+  update dynamic settings for the bot
+```
+
+> *currently accepted settings:*
+> - **pause**: `0` for normal operation, `1` to only warn
+
 **TOGGLE**
 ```
 usage: TOGGLE <id>

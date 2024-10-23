@@ -14,4 +14,10 @@ CREATE TABLE mxbl (
 -- for database.mxbl.find_active()
 CREATE INDEX mxbl_pattern ON mxbl(pattern);
 
+CREATE TABLE settings (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    value TEXT
+);
+
 COMMIT;

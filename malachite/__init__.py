@@ -8,9 +8,11 @@ import ircrobots
 from irctokens import build, Line
 from ircstates.numerics import RPL_ISUPPORT, RPL_WELCOME, RPL_YOUREOPER
 
+
 from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
+from .settings import Settings
 
 NICKSERV = "NickServ"
 
@@ -20,6 +22,7 @@ __version__ = "0.1.0"
 class MalachiteServer(Server):
     def __init__(self, bot: ircrobots.Bot, name: str, config: Config, database: Database):
         super().__init__(bot, name, config, database)
+        self.settings = Settings(database)
         self.resolver = Resolver()
         self.resolver.timeout = self._config.timeout
         self.resolver.lifetime = self._config.timeout
@@ -36,6 +39,7 @@ class MalachiteServer(Server):
         """finish initialisation and print a message to console"""
         if not self._init and self.isupport.network:
             print(f"[*] connected to {self.isupport.network} as {self.nickname}")
+            await self.settings.load()
             self._init = True
 
     @on_message(RPL_YOUREOPER)
@@ -248,6 +252,48 @@ class MalachiteServer(Server):
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
 
+    @command("SETTINGS")
+    async def _settings(self, _: Caller, args: list[str]):
+        """
+        usage: SETTINGS <GET|GETALL|SET> [name] [value]
+          update dynamic settings for the bot
+        """
+        try:
+            subcommand = args[0].upper()
+        except IndexError:
+            return "missing argument: subcommand <GET|GETALL|SET>"
+
+        match subcommand:
+            case "GET":
+                try:
+                    name = args[1]
+                except IndexError:
+                    return "missing argument: <name>"
+                try:
+                    return f"{name}: {getattr(self.settings, name)}"
+                except ValueError:
+                    await self.settings.load()
+                    return f"{name}: {getattr(self.settings, name)!r}"
+            case "GETALL":
+                try:
+                    return [f"{n}: {v!r}" for n, v in self.settings.all().items()]
+                except ValueError:
+                    await self.settings.load()
+                    return [f"{n}: {v!r}" for n, v in self.settings.all().items()]
+            case "SET":
+                try:
+                    name = args[1]
+                except IndexError:
+                    return "missing argument: <name>"
+                try:
+                    value = args[2]
+                except IndexError:
+                    return "missing argument: <value>"
+                await self.settings.set_(name, value)
+                return f"set {name} to {value!r}"
+            case _:
+                return f"invalid subcommand {subcommand}"
+
     # }}}
 
     async def _check_domain(self, domain: str, account: str, drop: bool):
@@ -286,7 +332,7 @@ class MalachiteServer(Server):
 
         if found:
             await self.database.hit(found.id)
-            if found.active:
+            if found.active and self.settings.pause == "0":
                 self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
                 if drop:
                     self.send_message(NICKSERV, f"FDROP {account}")
@@ -299,7 +345,7 @@ class MalachiteServer(Server):
             else:
                 hostmask = "<unknown user>"
 
-            if found.active:
+            if found.active and self.settings.pause == "0":
                 if drop:
                     self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
                              f" (\x1D{found.full_reason}\x1D)")

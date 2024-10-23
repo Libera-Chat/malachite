@@ -182,15 +182,61 @@ class MxblTable(Table):
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, id)
 
+
+class SettingsTable(Table):
+    async def get(self, name: str) -> str | None:
+        query = """
+            SELECT value
+            FROM settings
+            WHERE name = $1
+            LIMIT 1
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(query, name)
+
+    async def get_all(self) -> dict[str, str]:
+        query = """
+            SELECT name, value
+            FROM settings
+            ORDER BY id
+            LIMIT ALL
+        """
+        async with self.pool.acquire() as conn:
+            resp = await conn.fetch(query)
+        return {row["name"]: row["value"] for row in resp}
+
+    async def set_(self, name: str, value: str):
+        query = """
+            INSERT INTO settings
+            (name, value)
+            VALUES ($1, $2)
+            ON CONFLICT(name)
+            DO UPDATE SET
+                value = EXCLUDED.value
+        """
+        async with self.pool.acquire() as conn:
+            await conn.fetchval(query, name, value)
+
+
 class Database:
     def __init__(self, pool: Pool) -> None:
         self._pool = pool
         self.mxbl = MxblTable(pool)
+        self.settings = SettingsTable(pool)
 
     @classmethod
     async def connect(cls, user: str, password: str | None, host: str | None, database: str | None):
         pool = await asyncpg.create_pool(user=user, password=password, host=host, database=database)
         return cls(pool)  # type: ignore
+
+    def get_setting(self, name: str):
+        return asyncio.create_task(self.settings.get(name))
+
+    def get_all_settings(self):
+        return asyncio.create_task(self.settings.get_all())
+
+    def set_setting(self, name: str, value: str):
+        return asyncio.create_task(self.settings.set_(name, value))
 
     def __getattr__(self, attr):
         """

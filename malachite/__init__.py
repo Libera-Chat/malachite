@@ -12,7 +12,7 @@ from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
 
-NICKSERV = "cattenoire"
+NICKSERV = "NickServ"
 
 __version__ = "0.1.0"
 

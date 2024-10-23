@@ -20,7 +20,7 @@ psql -U malachite -f make-database.sql
 
 ## Running
 
-```
+```sh
 python3 -m malachite config.toml
 ```
 
@@ -28,20 +28,20 @@ python3 -m malachite config.toml
 
 **ADD**
 ```
-usage: ADD <ip|domain> <reason>
-  add an ip or domain to the mxbl
+usage: ADD <ip|cidr|domain|%glob%|/regex/> <reason>
+  add a pattern to the mxbl. globs and regexes are case-insensitive
 ```
 
 **DEL**
 ```
 usage: DEL <id>
-  remove an ip or domain from the mxbl
+  remove a pattern from the mxbl
 ```
 
 **EDITPATTERN**
 ```
-usage: EDITPATTERN <id> <ip|domain>
-  update the ip or domain for an entry by id
+usage: EDITPATTERN <id> <ip|cidr|domain|%glob%|/regex/>
+  update the pattern of an entry by id
 ```
 
 **EDITREASON**
@@ -59,14 +59,14 @@ usage: GET <id>
 **HELP**
 ```
 usage: HELP [command]
-  show usage information about a command
+  show usage information for a command
 ```
 
 **LIST**
 ```
-usage: LIST [limit = 0] [glob]
+usage: LIST [limit = 0] [offset = 0]
   list mxbl entries up to limit (default: no limit),
-  optionally filtering with a glob pattern
+  starting at offset (default: index 0)
 ```
 
 **SETTINGS**

@@ -1,37 +1,42 @@
 import asyncio
+import fnmatch
+import ipaddress
+import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
+from typing import Self
 
 import asyncpg
-from asyncpg import Pool
+from asyncpg import Pool, Record
 
-
-def pretty_delta(d: timedelta) -> str:
-    weeks, days = divmod(d.days, 7)
-    hours, rem = divmod(d.seconds, (60 * 60))
-    minutes, seconds = divmod(rem, 60)
-
-    if weeks > 0:
-        return f"{weeks}w{days}d ago"
-    elif days > 0:
-        return f"{days}d{hours}h ago"
-    elif hours > 0:
-        return f"{hours}h{minutes}m ago"
-    elif minutes > 0:
-        return f"{minutes}m{seconds}s ago"
-    return f"{seconds}s ago"
+from .util import PatternType, pretty_delta
 
 
 @dataclass
 class MxblEntry:
     id: int
     pattern: str
+    pattern_type: PatternType
     reason: str
     active: bool
     added: datetime
     added_by: str
     hits: int
     last_hit: datetime | None
+
+    @classmethod
+    def from_record(cls, rec: Record) -> Self:
+        return cls(
+            id=rec["id"],
+            pattern=rec["pattern"],
+            pattern_type=PatternType(rec["pattern_type"]),
+            reason=rec["reason"],
+            active=rec["active"],
+            added=rec["added"],
+            added_by=rec["added_by"],
+            hits=rec["hits"],
+            last_hit=rec["last_hit"],
+        )
 
     def __str__(self) -> str:
         now = datetime.now(UTC)
@@ -44,8 +49,25 @@ class MxblEntry:
         else:
             last_hit = "\x0312never\x03"
         active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"
-        return (f"#{self.id}: \x02{self.pattern}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
+        return (f"#{self.id}: \x02{self.render_pattern()}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
                 f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
+
+    def render_pattern(self) -> str:
+        delim = ""
+        sfx = ""
+
+        match self.pattern_type:
+            case PatternType.Glob:
+                delim = "%"
+            case PatternType.Regex:
+                delim = "/"
+            case PatternType.String:
+                delim = "'"
+            case PatternType.Cidr:
+                delim = ""
+                sfx = " [CIDR]"
+
+        return delim + self.pattern + delim + sfx
 
     @property
     def full_reason(self) -> str:
@@ -63,58 +85,74 @@ class MxblTable(Table):
         get one entry by id
         """
         query = """
-            SELECT *
+            SELECT id, pattern, pattern_type, reason, active, added, added_by, hits, last_hit
             FROM mxbl
             WHERE id = $1
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(query, id)
         if row is not None:
-            return MxblEntry(*row)
+            return MxblEntry.from_record(row)
 
-    async def find(self, search: str) -> MxblEntry | None:
+    async def match(self, search: str) -> MxblEntry | None:
         """
-        postgres glob search all entries
+        search all entries, return first match
+        matches active entries first
         """
-        query = """
-            SELECT *
+        rows = await self.list_all(order_by="active DESC, id")
+
+        found = None
+        for row in rows:
+            match row.pattern_type:
+                case PatternType.String:
+                    if row.pattern == search:
+                        found = row
+                        break
+                case PatternType.Glob:
+                    if re.search(fnmatch.translate(row.pattern), search, flags=re.I):
+                        found = row
+                        break
+                case PatternType.Regex:
+                    if re.search(row.pattern, search, flags=re.I):
+                        found = row
+                        break
+                case PatternType.Cidr:
+                    try:
+                        if ipaddress.ip_address(search) in ipaddress.ip_network(row.pattern):
+                            found = row
+                            break
+                    except ValueError:
+                        continue
+
+        if found is not None:
+            return found
+
+    async def list_all(self, limit: int = 0, offset: int = 0, order_by: str = "id") -> list[MxblEntry]:
+        """
+        list all entries up to limit (optional, default all) from an offset (optional, default index 0)
+        """
+        query = f"""
+            SELECT id, pattern, pattern_type, reason, active, added, added_by, hits, last_hit
             FROM mxbl
-            WHERE pattern = $1
-            ORDER BY id
-            LIMIT 1
+            ORDER BY {order_by}
+            LIMIT $1
+            OFFSET $2
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(query, search)
-        if row is not None:
-            return MxblEntry(*row)
+            rows = await conn.fetch(query, limit or None, offset)
+        return [MxblEntry.from_record(row) for row in rows]
 
-    async def list_all(self, limit: int = 0, search: str = "") -> list[MxblEntry]:
-        """
-        list all entries up to limit (optional, default all) with an optional postgres glob filter
-        """
-        query = """
-            SELECT *
-            FROM mxbl
-            WHERE pattern LIKE $1
-            ORDER BY id
-            LIMIT $2
-        """
-        search = search.replace("*", "%").replace("?", "_")
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(query, search or "%", limit or None)
-        return [MxblEntry(*row) for row in rows]
-
-    async def add(self, pattern: str, reason: str, active: bool, added_by: str) -> int:
+    async def add(self, pattern: str, pattern_type: PatternType, reason: str, active: bool, added_by: str) -> int:
         """
         add an entry
         """
         query = """
             INSERT INTO mxbl
-            (pattern, reason, active, added, added_by)
-            VALUES ($1, $2, $3, NOW()::TIMESTAMP, $4)
+            (pattern, pattern_type, reason, active, added, added_by)
+            VALUES ($1, $2, $3, $4, NOW()::TIMESTAMP, $5)
             RETURNING id
         """
-        args = [pattern, reason, active, added_by]
+        args = [pattern, pattern_type, reason, active, added_by]
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, *args)
 
@@ -130,18 +168,18 @@ class MxblTable(Table):
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, id)
 
-    async def edit_pattern(self, id: int, pattern: str) -> int:
+    async def edit_pattern(self, id: int, pattern: str, pattern_type: str) -> int:
         """
         update the pattern of an entry
         """
         query = """
             UPDATE mxbl
-            SET pattern = $2
+            SET pattern = $2, pattern_type = $3
             WHERE id = $1
             RETURNING id
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, id, pattern)
+            return await conn.fetchval(query, id, pattern, pattern_type)
 
     async def edit_reason(self, id: int, reason: str) -> int:
         """

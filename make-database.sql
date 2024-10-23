@@ -3,6 +3,7 @@ BEGIN;
 CREATE TABLE mxbl (
     id SERIAL PRIMARY KEY,
     pattern TEXT NOT NULL,
+    pattern_type SMALLINT NOT NULL,
     reason TEXT NOT NULL,
     active BOOLEAN NOT NULL,
     added TIMESTAMP WITH TIME ZONE NOT NULL,

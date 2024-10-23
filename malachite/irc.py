@@ -1,7 +1,7 @@
 import asyncio
 import inspect
 import shlex
-from collections.abc import Awaitable
+import traceback
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, TypeAlias
 
@@ -124,6 +124,7 @@ class Server(ircrobots.Server):
         for i, e in enumerate(ret):
             if e is not None:
                 print(f"[!] exception encountered in message handler {handlers[i].name!r}: {e}")
+                traceback.print_tb(e.__traceback__)
 
     @on_message("PRIVMSG", lambda ln: ln.source is not None)
     async def on_command(self, line: Line):
@@ -159,7 +160,7 @@ class Server(ircrobots.Server):
             return
 
         try:
-            args = shlex.split(sargs)
+            args = shlex.split(sargs, posix=False)
         except ValueError as e:
             self.send(build("NOTICE", [target, f"shlex failure: {str(e)}"]))
             return
@@ -168,6 +169,7 @@ class Server(ircrobots.Server):
             outs = await self._cmd_handlers[command].run(self, caller, args)
         except Exception as e:
             print(f"[!] exception encountered in command handler {command!r}: {e}")
+            traceback.print_tb(e.__traceback__)
         else:
             if isinstance(outs, str):
                 outs = outs.strip().split("\n")

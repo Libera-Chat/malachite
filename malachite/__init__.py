@@ -1,5 +1,4 @@
 import asyncio
-import ipaddress
 
 from dns.asyncresolver import Resolver
 from dns.rdatatype import MX, A, AAAA
@@ -13,6 +12,7 @@ from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
 from .settings import Settings
+from .util import parse_pattern
 
 NICKSERV = "NickServ"
 
@@ -102,8 +102,8 @@ class MalachiteServer(Server):
     @command("ADD")
     async def _add(self, caller: Caller, args: list[str]):
         """
-        usage: ADD <ip|domain> <reason>
-          add an ip or domain to the mxbl
+        usage: ADD <ip|cidr|domain|%glob%|/regex/> <reason>
+          add a pattern to the mxbl. globs and regexes are case-insensitive
         """
         try:
             pat = args[0]
@@ -114,14 +114,9 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <reason>"
 
-        try:
-            ipaddress.ip_address(pat)
-        except ValueError:
-            # not an ip address, must be a domain... ensure it's an FQDN
-            if not pat.endswith("."):
-                pat += "."
+        pat, pat_ty = parse_pattern(pat)
 
-        id = await self.database.add(pat, reason, True, caller.oper)
+        id = await self.database.add(pat, pat_ty, reason, True, caller.oper)
         if id is not None:
             return f"added mxbl entry #{id}"
         return "adding mxbl entry failed"
@@ -130,7 +125,7 @@ class MalachiteServer(Server):
     async def _del(self, _: Caller, args: list[str]):
         """
         usage: DEL <id>
-          remove an ip or domain from the mxbl
+          remove a pattern from the mxbl
         """
         try:
             id = int(args[0])
@@ -165,20 +160,26 @@ class MalachiteServer(Server):
     @command("LIST")
     async def _list(self, _: Caller, args: list[str]):
         """
-        usage: LIST [limit = 0] [glob]
-          list mxbl entries up to limit (default: no limit), optionally filtering with a glob pattern
+        usage: LIST [limit = 0] [offset = 0]
+          list mxbl entries up to limit (default: no limit), starting at offset (default: index 0)
         """
         try:
             limit = int(args[0])
+            if limit < 0:
+                raise ValueError
         except ValueError:
-            return "invalid limit (not an integer)"
+            return "invalid limit (not an integer >= 0)"
         except IndexError:
             limit = 0
         try:
-            search = args[1]
+            offset = int(args[1])
+            if offset < 0:
+                raise ValueError
+        except ValueError:
+            return "invalid offset (not an integer >= 0)"
         except IndexError:
-            search = "*"
-        rows = await self.database.list_all(limit, search)
+            offset = 0
+        rows = await self.database.list_all(limit, offset)
         if rows:
             return [str(r) for r in rows]
         return "no entries found"
@@ -204,8 +205,8 @@ class MalachiteServer(Server):
     @command("EDITPATTERN")
     async def _edit_pattern(self, _: Caller, args: list[str]):
         """
-        usage: EDITPATTERN <id> <ip|domain>
-          update the ip or domain for an entry by id
+        usage: EDITPATTERN <id> <ip|cidr|domain|%glob%|/regex/>
+          update the pattern of an entry by id
         """
         try:
             id = int(args[0])
@@ -218,14 +219,9 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <ip|domain>"
 
-        try:
-            ipaddress.ip_address(pat)
-        except ValueError:
-            # not an ip address, must be a domain... ensure it's an FQDN
-            if not pat.endswith("."):
-                pat += "."
+        pat, pat_ty = parse_pattern(pat)
 
-        id = await self.database.edit_pattern(id, pat)
+        id = await self.database.edit_pattern(id, pat, pat_ty)
         if id is not None:
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -306,7 +302,7 @@ class MalachiteServer(Server):
             if new reg, fdrop and send notice
             if email change, freeze
         """
-        if not (found := await self.database.find(domain)):
+        if not (found := await self.database.match(domain)):
             queue = [(domain, MX), (domain, A), (domain, AAAA)]
             while queue:
                 domain, ty = queue.pop(0)
@@ -325,7 +321,7 @@ class MalachiteServer(Server):
                         else:
                             continue
 
-                        if (found := await self.database.find(rec_name)):
+                        if (found := await self.database.match(rec_name)):
                             break
                     if found:
                         break

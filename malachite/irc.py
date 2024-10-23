@@ -150,9 +150,7 @@ class Server(ircrobots.Server):
             return
 
         if not line.tags or not (oper := line.tags.get("solanum.chat/oper", "")):
-            # TODO
-            # return
-            oper = "yeah"
+            return
 
         caller = Caller(line.hostmask.nickname, str(line.hostmask), oper)
 

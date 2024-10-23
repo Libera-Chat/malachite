@@ -23,7 +23,7 @@ async def main(config: Config):
     params.realname = config.realname
     params.password = config.password
     params.sasl = SASLUserPass(config.sasl.user, config.sasl.password)
-    # TODO: params.tls = TLSVerifyChain(client_keypair=(str(config.oper.cert), str(config.oper.key)))
+    params.tls = TLSVerifyChain(client_keypair=(str(config.oper.cert), str(config.oper.key)))
 
     autojoin = config.channels
     if config.log:

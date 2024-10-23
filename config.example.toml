@@ -2,7 +2,7 @@
 timeout = 5
 
 [irc]
-server = "irc.libera.chat"
+server = "irc.libera.chat:+6697"
 nickname = "malachite"
 username = "malachite"
 realname = "malachite"

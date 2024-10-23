@@ -29,8 +29,7 @@ class MalachiteServer(Server):
     @on_message(RPL_WELCOME)
     async def on_welcome(self, _):
         """oper up"""
-        # self.send(build("OPER", [self._config.oper.user, self._config.oper.password]))
-        ...
+        self.send(build("OPER", [self._config.oper.user, self._config.oper.password]))
 
     @on_message(RPL_ISUPPORT)
     async def on_isupport(self, _):

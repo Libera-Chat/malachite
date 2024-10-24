@@ -161,7 +161,12 @@ class Server(ircrobots.Server):
             return
 
         try:
-            args = shlex.split(sargs, posix=False)
+            sh = shlex.shlex(sargs, posix=True)
+            # don't remove backslashes
+            sh.escape = ''
+            # only split on whitespace, like shlex.split()
+            sh.whitespace_split = True
+            args = list(sh)
         except ValueError as e:
             self.send(build("NOTICE", [target, f"shlex failure: {str(e)}"]))
             return

@@ -138,6 +138,7 @@ class Server(ircrobots.Server):
 
         if self.is_me(line.params[0]):
             # private message
+            self.log(f"[PV] <{line.hostmask}> {line.params[1]}")
             target = line.hostmask.nickname
             command = first
             sargs = rest

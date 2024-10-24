@@ -78,6 +78,12 @@ usage: SETTINGS <GET|GETALL|SET> [name] [value]
 > *currently accepted settings:*
 > - **pause**: `0` for normal operation, `1` to only warn
 
+**TEST**
+```
+usage: TEST <email|domain>
+  test if a domain would match an existing pattern
+```
+
 **TOGGLE**
 ```
 usage: TOGGLE <id>

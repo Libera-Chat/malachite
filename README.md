@@ -81,7 +81,13 @@ usage: SETTINGS <GET|GETALL|SET> [name] [value]
 **TEST**
 ```
 usage: TEST <email|domain>
-  test if a domain would match an existing pattern
+  test if an email or domain would match an existing pattern
+```
+
+**TESTPAT**
+```
+usage: TESTPAT <ip|cidr|domain|%glob%|/regex/> <email|domain>
+  test if an email or domain would match a specified pattern
 ```
 
 **TOGGLE**

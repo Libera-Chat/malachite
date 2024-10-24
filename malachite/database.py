@@ -1,61 +1,10 @@
 import asyncio
-import fnmatch
-import ipaddress
-import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Self
 
 import asyncpg
 from asyncpg import Pool, Record
 
-from .util import PatternType, pretty_delta, render_pattern
-
-
-@dataclass
-class MxblEntry:
-    id: int
-    pattern: str
-    pattern_type: PatternType
-    reason: str
-    active: bool
-    added: datetime
-    added_by: str
-    hits: int
-    last_hit: datetime | None
-
-    @classmethod
-    def from_record(cls, rec: Record) -> Self:
-        return cls(
-            id=rec["id"],
-            pattern=rec["pattern"],
-            pattern_type=PatternType(rec["pattern_type"]),
-            reason=rec["reason"],
-            active=rec["active"],
-            added=rec["added"],
-            added_by=rec["added_by"],
-            hits=rec["hits"],
-            last_hit=rec["last_hit"],
-        )
-
-    def __str__(self) -> str:
-        now = datetime.now(UTC)
-        if self.last_hit is not None:
-            last_hit = now - self.last_hit
-            if last_hit.total_seconds() < (6 * 60 * 60):
-                last_hit = f"\x0307{pretty_delta(last_hit)}\x03"
-            else:
-                last_hit = pretty_delta(last_hit)
-        else:
-            last_hit = "\x0312never\x03"
-        active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"
-        pat = render_pattern(self.pattern, self.pattern_type)
-        return (f"#{self.id}: \x02{pat}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
-                f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
-
-    @property
-    def full_reason(self) -> str:
-        return f"mxbl #{self.id} - {self.reason}"
+from .util import MxblEntry, PatternType
 
 
 @dataclass
@@ -77,40 +26,6 @@ class MxblTable(Table):
             row = await conn.fetchrow(query, id)
         if row is not None:
             return MxblEntry.from_record(row)
-
-    async def match(self, search: str) -> MxblEntry | None:
-        """
-        search all entries, return first match
-        matches active entries first
-        """
-        rows = await self.list_all(order_by="active DESC, id")
-
-        found = None
-        for row in rows:
-            match row.pattern_type:
-                case PatternType.String:
-                    # remove root domain . from both in case one doesn't have it
-                    if row.pattern.rstrip(".") == search.rstrip("."):
-                        found = row
-                        break
-                case PatternType.Glob:
-                    if re.search(fnmatch.translate(row.pattern), search, flags=re.I):
-                        found = row
-                        break
-                case PatternType.Regex:
-                    if re.search(row.pattern, search, flags=re.I):
-                        found = row
-                        break
-                case PatternType.Cidr:
-                    try:
-                        if ipaddress.ip_address(search) in ipaddress.ip_network(row.pattern):
-                            found = row
-                            break
-                    except ValueError:
-                        continue
-
-        if found is not None:
-            return found
 
     async def list_all(self, limit: int = 0, offset: int = 0, order_by: str = "id") -> list[MxblEntry]:
         """

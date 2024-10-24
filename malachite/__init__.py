@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 
 from dns.asyncresolver import Resolver
 from dns.rdatatype import MX, A, AAAA
@@ -9,10 +10,10 @@ from ircstates.numerics import RPL_ISUPPORT, RPL_WELCOME, RPL_YOUREOPER
 
 
 from .config import Config
-from .database import Database, MxblEntry
+from .database import Database
 from .irc import Caller, command, on_message, Server
 from .settings import Settings
-from .util import PatternType, parse_pattern, render_pattern
+from .util import match_patterns, MxblEntry, PatternType, parse_pattern, render_pattern
 
 NICKSERV = "NickServ"
 
@@ -152,7 +153,7 @@ class MalachiteServer(Server):
         ret = await self.database.add(pat, pat_ty, reason, True, caller.oper)
         if ret is not None:
             id, pattern, pattern_type = tuple(ret)
-            pat = render_pattern(pattern, pattern_type)
+            pat = render_pattern(pattern, PatternType(pattern_type))
             self.log(f"{caller.nick} ({caller.oper}) ADD: added pattern {id} \x02{pat}\x02 ({reason})")
             return f"added mxbl entry #{id}"
         return "adding mxbl entry failed"
@@ -266,7 +267,7 @@ class MalachiteServer(Server):
         ret = await self.database.edit_pattern(id, pat, pat_ty)
         if ret is not None:
             id, pattern, pattern_type = tuple(ret)
-            pat = render_pattern(pattern, pattern_type)
+            pat = render_pattern(pattern, PatternType(pattern_type))
             self.log(f"{caller.nick} ({caller.oper}) EDITPATTERN: updated pattern {id} to \x02{pat}\x02")
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -291,7 +292,7 @@ class MalachiteServer(Server):
         ret = await self.database.edit_reason(id, reason)
         if ret is not None:
             id, pattern, pattern_type, reason = tuple(ret)
-            pat = render_pattern(pattern, pattern_type)
+            pat = render_pattern(pattern, PatternType(pattern_type))
             self.log(f"{caller.nick} ({caller.oper}) EDITREASON: updated pattern {id} \x02{pat}\x02 reason: {reason}")
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -347,10 +348,10 @@ class MalachiteServer(Server):
     async def _testmatch(self, _: Caller, args: list[str]):
         """
         usage: TEST <email|domain>
-          test if a domain would match an existing pattern
+          test if an email or domain would match an existing pattern
         """
         try:
-            _, _, domain = args[0].rpartition("@")
+            _, _, domain = args[0].rpartition("@")  # type: ignore
         except IndexError:
             return "missing argument: <email|domain>"
 
@@ -360,9 +361,31 @@ class MalachiteServer(Server):
             return f"match: {found}"
         return "does not match any mxbl entries"
 
+    @command("TESTPAT")
+    async def _testpattern(self, _: Caller, args: list[str]):
+        """
+        usage: TESTPAT <ip|cidr|domain|%glob%|/regex/> <email|domain>
+          test if an email or domain would match a specified pattern
+        """
+        try:
+            pat = args[0]
+        except IndexError:
+            return "missing argument: <ip|cidr|domain|%glob%|/regex/>"
+        try:
+            _, _, domain = args[1].rpartition("@")  # type: ignore
+        except IndexError:
+            return "missing argument: <email|domain>"
+
+        found = await self._check_domain(domain, pat)
+
+        if found:
+            return f"{domain} matches \x02{found.render_pattern()}\x02"
+        return "does not match"
+
+
     # }}}
 
-    async def _check_domain(self, domain: str) -> MxblEntry | None:
+    async def _check_domain(self, domain: str, pattern: str | None = None) -> MxblEntry | None:
         """
         check if domain matches any entry
         if not found, resolve MX, A, and AAAA for domain
@@ -372,7 +395,25 @@ class MalachiteServer(Server):
             if new reg, fdrop and send notice
             if email change, freeze
         """
-        if not (found := await self.database.match(domain)):
+        if pattern is not None:
+            pat, pat_ty = parse_pattern(pattern)
+            entry = MxblEntry(
+                id=-1,
+                pattern=pat,
+                pattern_type=pat_ty,
+                reason="test",
+                active=False,
+                added=datetime.now(UTC),
+                added_by="test",
+                hits=-1,
+                last_hit=None
+            )
+            patterns = [entry]
+        else:
+            # get all patterns, active entries first
+            patterns = await self.database.list_all(order_by="active DESC, id")
+
+        if not (found := match_patterns(patterns, domain)):
             queue = [(domain, MX), (domain, A), (domain, AAAA)]
             while queue:
                 domain, ty = queue.pop(0)
@@ -391,7 +432,7 @@ class MalachiteServer(Server):
                         else:
                             continue
 
-                        if (found := await self.database.match(rec_name)):
+                        if (found := match_patterns(patterns, domain)):
                             break
                     if found:
                         break

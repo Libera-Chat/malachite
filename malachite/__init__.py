@@ -262,7 +262,7 @@ class MalachiteServer(Server):
         match subcommand:
             case "GET":
                 try:
-                    name = args[1]
+                    name = args[1].lower()
                 except IndexError:
                     return "missing argument: <name>"
                 try:
@@ -278,7 +278,7 @@ class MalachiteServer(Server):
                     return [f"{n}: {v!r}" for n, v in self.settings.all().items()]
             case "SET":
                 try:
-                    name = args[1]
+                    name = args[1].lower()
                 except IndexError:
                     return "missing argument: <name>"
                 try:

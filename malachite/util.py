@@ -18,18 +18,15 @@ def parse_pattern(pat: str) -> tuple[str, PatternType]:
         pat = pat.removeprefix("/").removesuffix("/")
         pat_ty = PatternType.Regex
 
+    elif "/" in pat:
+        try:
+            ipaddress.ip_network(pat)
+            pat_ty = PatternType.Cidr
+        except ValueError:
+            pat_ty = PatternType.String
+
     else:
         pat_ty = PatternType.String
-        try:
-            ipaddress.ip_address(pat)
-        except ValueError:
-            try:
-                ipaddress.ip_network(pat)
-                pat_ty = PatternType.Cidr
-            except ValueError:
-                # not an ip address or network, must be a domain... ensure it's an FQDN
-                if not pat.endswith("."):
-                    pat += "."
 
     return (pat, pat_ty)
 

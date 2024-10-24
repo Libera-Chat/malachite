@@ -89,7 +89,8 @@ class MxblTable(Table):
         for row in rows:
             match row.pattern_type:
                 case PatternType.String:
-                    if row.pattern == search:
+                    # remove root domain . from both in case one doesn't have it
+                    if row.pattern.rstrip(".") == search.rstrip("."):
                         found = row
                         break
                 case PatternType.Glob:

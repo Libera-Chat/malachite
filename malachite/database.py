@@ -9,7 +9,7 @@ from typing import Self
 import asyncpg
 from asyncpg import Pool, Record
 
-from .util import PatternType, pretty_delta
+from .util import PatternType, pretty_delta, render_pattern
 
 
 @dataclass
@@ -49,25 +49,9 @@ class MxblEntry:
         else:
             last_hit = "\x0312never\x03"
         active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"
-        return (f"#{self.id}: \x02{self.render_pattern()}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
+        pat = render_pattern(self.pattern, self.pattern_type)
+        return (f"#{self.id}: \x02{pat}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
                 f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
-
-    def render_pattern(self) -> str:
-        delim = ""
-        sfx = ""
-
-        match self.pattern_type:
-            case PatternType.Glob:
-                delim = "%"
-            case PatternType.Regex:
-                delim = "/"
-            case PatternType.String:
-                delim = "'"
-            case PatternType.Cidr:
-                delim = ""
-                sfx = " [CIDR]"
-
-        return delim + self.pattern + delim + sfx
 
     @property
     def full_reason(self) -> str:
@@ -142,7 +126,7 @@ class MxblTable(Table):
             rows = await conn.fetch(query, limit or None, offset)
         return [MxblEntry.from_record(row) for row in rows]
 
-    async def add(self, pattern: str, pattern_type: PatternType, reason: str, active: bool, added_by: str) -> int:
+    async def add(self, pattern: str, pattern_type: PatternType, reason: str, active: bool, added_by: str) -> Record | None:
         """
         add an entry
         """
@@ -150,25 +134,25 @@ class MxblTable(Table):
             INSERT INTO mxbl
             (pattern, pattern_type, reason, active, added, added_by)
             VALUES ($1, $2, $3, $4, NOW()::TIMESTAMP, $5)
-            RETURNING id
+            RETURNING id, pattern, pattern_type
         """
         args = [pattern, pattern_type, reason, active, added_by]
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, *args)
+            return await conn.fetchrow(query, *args)
 
-    async def delete(self, id: int) -> int:
+    async def delete(self, id: int) -> Record | None:
         """
         delete an entry
         """
         query = """
             DELETE FROM mxbl
             WHERE id = $1
-            RETURNING id
+            RETURNING id, pattern, pattern_type, reason
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, id)
+            return await conn.fetchrow(query, id)
 
-    async def edit_pattern(self, id: int, pattern: str, pattern_type: str) -> int:
+    async def edit_pattern(self, id: int, pattern: str, pattern_type: str) -> Record | None:
         """
         update the pattern of an entry
         """
@@ -176,12 +160,12 @@ class MxblTable(Table):
             UPDATE mxbl
             SET pattern = $2, pattern_type = $3
             WHERE id = $1
-            RETURNING id
+            RETURNING id, pattern, pattern_type
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, id, pattern, pattern_type)
+            return await conn.fetchrow(query, id, pattern, pattern_type)
 
-    async def edit_reason(self, id: int, reason: str) -> int:
+    async def edit_reason(self, id: int, reason: str) -> Record | None:
         """
         update the reason of an entry
         """
@@ -189,12 +173,12 @@ class MxblTable(Table):
             UPDATE mxbl
             SET reason = $2
             WHERE id = $1
-            RETURNING id
+            RETURNING id, pattern, pattern_type, reason
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, id, reason)
+            return await conn.fetchrow(query, id, reason)
 
-    async def toggle(self, id: int) -> bool:
+    async def toggle(self, id: int) -> Record | None:
         """
         toggle a pattern active/warn by id
         """
@@ -202,12 +186,12 @@ class MxblTable(Table):
             UPDATE mxbl
             SET active = NOT active
             WHERE id = $1
-            RETURNING active
+            RETURNING id, pattern, pattern_type, active
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, id)
+            return await conn.fetchrow(query, id)
 
-    async def hit(self, id: int) -> int:
+    async def hit(self, id: int) -> int | None:
         """
         increment the hit counter and update the last_hit timestamp for an entry
         """
@@ -222,15 +206,15 @@ class MxblTable(Table):
 
 
 class SettingsTable(Table):
-    async def get(self, name: str) -> str | None:
+    async def get(self, name: str) -> Record | None:
         query = """
-            SELECT value
+            SELECT name, value
             FROM settings
             WHERE name = $1
             LIMIT 1
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchval(query, name)
+            return await conn.fetchrow(query, name)
 
     async def get_all(self) -> dict[str, str]:
         query = """
@@ -243,7 +227,7 @@ class SettingsTable(Table):
             resp = await conn.fetch(query)
         return {row["name"]: row["value"] for row in resp}
 
-    async def set_(self, name: str, value: str):
+    async def set_(self, name: str, value: str) -> Record | None:
         query = """
             INSERT INTO settings
             (name, value)
@@ -251,9 +235,10 @@ class SettingsTable(Table):
             ON CONFLICT(name)
             DO UPDATE SET
                 value = EXCLUDED.value
+            RETURNING name, value
         """
         async with self.pool.acquire() as conn:
-            await conn.fetchval(query, name, value)
+            return await conn.fetchrow(query, name, value)
 
 
 class Database:

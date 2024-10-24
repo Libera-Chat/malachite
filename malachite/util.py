@@ -34,6 +34,24 @@ def parse_pattern(pat: str) -> tuple[str, PatternType]:
     return (pat, pat_ty)
 
 
+def render_pattern(pattern, pattern_type) -> str:
+    delim = ""
+    sfx = ""
+
+    match pattern_type:
+        case PatternType.Glob:
+            delim = "%"
+        case PatternType.Regex:
+            delim = "/"
+        case PatternType.String:
+            delim = "'"
+        case PatternType.Cidr:
+            delim = ""
+            sfx = " [CIDR]"
+
+    return delim + pattern + delim + sfx
+
+
 def pretty_delta(d: timedelta) -> str:
     weeks, days = divmod(d.days, 7)
     hours, rem = divmod(d.seconds, (60 * 60))

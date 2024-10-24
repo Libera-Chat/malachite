@@ -19,8 +19,10 @@ class Settings:
 
         return self._settings.get(attr)
 
-    async def set_(self, name, value):
+    async def set_(self, name, value) -> tuple[str, str] | None:
         if self._settings is None:
             await self.load()
         self._settings[name] = value  # type: ignore
-        await self._database.set_setting(name, value)
+        ret = await self._database.set_setting(name, value)
+        if ret is not None:
+            return tuple(ret)

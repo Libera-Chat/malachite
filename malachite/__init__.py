@@ -12,7 +12,7 @@ from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
 from .settings import Settings
-from .util import parse_pattern
+from .util import PatternType, parse_pattern, render_pattern
 
 NICKSERV = "NickServ"
 
@@ -116,13 +116,16 @@ class MalachiteServer(Server):
 
         pat, pat_ty = parse_pattern(pat)
 
-        id = await self.database.add(pat, pat_ty, reason, True, caller.oper)
-        if id is not None:
+        ret = await self.database.add(pat, pat_ty, reason, True, caller.oper)
+        if ret is not None:
+            id, pattern, pattern_type = tuple(ret)
+            pat = render_pattern(pattern, pattern_type)
+            self.log(f"{caller.nick} ({caller.oper}) ADD: added pattern {id} \x02{pat}\x02 ({reason})")
             return f"added mxbl entry #{id}"
         return "adding mxbl entry failed"
 
     @command("DEL")
-    async def _del(self, _: Caller, args: list[str]):
+    async def _del(self, caller: Caller, args: list[str]):
         """
         usage: DEL <id>
           remove a pattern from the mxbl
@@ -136,7 +139,10 @@ class MalachiteServer(Server):
 
         ret = await self.database.delete(id)
         if ret is not None:
-            return f"removed mxbl entry #{ret}"
+            id, pattern, pattern_type, reason = tuple(ret)
+            pat = render_pattern(pattern, PatternType(pattern_type))
+            self.log(f"{caller.nick} ({caller.oper}) DEL: deleted pattern {id} \x02{pat}\x02 ({reason})")
+            return f"removed mxbl entry #{id}"
         return f"no entry found for id: {id}"
 
     @command("GET")
@@ -185,7 +191,7 @@ class MalachiteServer(Server):
         return "no entries found"
 
     @command("TOGGLE")
-    async def _toggle(self, _: Caller, args: list[str]):
+    async def _toggle(self, caller: Caller, args: list[str]):
         """
         usage: TOGGLE <id>
           make an entry active or warn
@@ -196,14 +202,17 @@ class MalachiteServer(Server):
             return "invalid id (not an integer)"
         except IndexError:
             return "missing argument: <id>"
-        active = await self.database.toggle(id)
-        if active is not None:
-            en_str = "active" if active else "warn"
-            return f"mxbl entry #{id} was made {en_str}"
+        ret = await self.database.toggle(id)
+        if ret is not None:
+            id, pattern, pattern_type, active = tuple(ret)
+            pat = render_pattern(pattern, PatternType(pattern_type))
+            old, new = ("WARN", "ACTIVE") if active else ("ACTIVE", "WARN")
+            self.log(f"{caller.nick} ({caller.oper}) TOGGLE: toggled pattern {id} \x02{pat}\x02: {old} -> {new}")
+            return f"mxbl entry #{id} {old} -> {new}"
         return f"no entry found for id: {id}"
 
     @command("EDITPATTERN")
-    async def _edit_pattern(self, _: Caller, args: list[str]):
+    async def _edit_pattern(self, caller: Caller, args: list[str]):
         """
         usage: EDITPATTERN <id> <ip|cidr|domain|%glob%|/regex/>
           update the pattern of an entry by id
@@ -221,13 +230,16 @@ class MalachiteServer(Server):
 
         pat, pat_ty = parse_pattern(pat)
 
-        id = await self.database.edit_pattern(id, pat, pat_ty)
-        if id is not None:
+        ret = await self.database.edit_pattern(id, pat, pat_ty)
+        if ret is not None:
+            id, pattern, pattern_type = tuple(ret)
+            pat = render_pattern(pattern, pattern_type)
+            self.log(f"{caller.nick} ({caller.oper}) EDITPATTERN: updated pattern {id} to \x02{pat}\x02")
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
 
     @command("EDITREASON")
-    async def _edit_reason(self, _: Caller, args: list[str]):
+    async def _edit_reason(self, caller: Caller, args: list[str]):
         """
         usage: EDITREASON <id> <reason>
           update the reason for an entry by id
@@ -243,13 +255,16 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <reason>"
 
-        id = await self.database.edit_reason(id, reason)
-        if id is not None:
+        ret = await self.database.edit_reason(id, reason)
+        if ret is not None:
+            id, pattern, pattern_type, reason = tuple(ret)
+            pat = render_pattern(pattern, pattern_type)
+            self.log(f"{caller.nick} ({caller.oper}) EDITREASON: updated pattern {id} \x02{pat}\x02 reason: {reason}")
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
 
     @command("SETTINGS")
-    async def _settings(self, _: Caller, args: list[str]):
+    async def _settings(self, caller: Caller, args: list[str]):
         """
         usage: SETTINGS <GET|GETALL|SET> [name] [value]
           update dynamic settings for the bot
@@ -266,7 +281,7 @@ class MalachiteServer(Server):
                 except IndexError:
                     return "missing argument: <name>"
                 try:
-                    return f"{name}: {getattr(self.settings, name)}"
+                    return f"{name}: {getattr(self.settings, name)!r}"
                 except ValueError:
                     await self.settings.load()
                     return f"{name}: {getattr(self.settings, name)!r}"
@@ -285,8 +300,13 @@ class MalachiteServer(Server):
                     value = args[2]
                 except IndexError:
                     return "missing argument: <value>"
-                await self.settings.set_(name, value)
-                return f"set {name} to {value!r}"
+                ret = await self.settings.set_(name, value)
+                if ret is not None:
+                    name, value = ret
+                    self.log(f"{caller.nick} ({caller.oper}) SETTINGS: set {name} to {value!r}")
+                    return f"set {name} to {value!r}"
+                else:
+                    return f"failed to set {name} to {value!r}"
             case _:
                 return f"invalid subcommand {subcommand}"
 

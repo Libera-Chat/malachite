@@ -417,7 +417,8 @@ class MalachiteServer(Server):
                 else:
                     return f"{name} not cached"
             case "SHOW":
-                return [self.cleanmails[i:i+8] for i in range(0, len(self.cleanmails), 8)]
+                cache = list(self.cleanmails.keys())
+                return [", ".join(cache[i:i+8]) for i in range(0, len(cache), 8)]
             case _:
                 return f"invalid subcommand {subcommand}"
 

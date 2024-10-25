@@ -103,3 +103,13 @@ usage: TESTPAT <ip|cidr|domain|%glob%|/regex/> <email|domain>
 usage: TOGGLE <id>
   make an entry active or warn
 ```
+
+## Patterns
+
+Patterns can be one of:
+
+- **domain**: must match the complete domain (with or without the root domain `.`)
+- **IP address**: can be IPv4 or IPv6
+- **CIDR range**: if an ip address is within the CIDR range, it matches. can be IPv4 or IPv6 in `a.b.c.d/N` or `aa:bb:cc:dd/N` format
+- **glob**: uses Python [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) globbing rules, can be matched to domains or IPs
+- **regular expression**: uses Python [`re`](https://docs.python.org/3/library/re.html) rules, can be matched to domains or IPs

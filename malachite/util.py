@@ -14,6 +14,7 @@ class PatternType(IntEnum):
     Glob = 1
     Regex = 2
     Cidr = 3
+    IpAddr = 4
 
 
 @dataclass
@@ -98,7 +99,11 @@ def parse_pattern(pat: str) -> tuple[str, PatternType]:
             pat_ty = PatternType.String
 
     else:
-        pat_ty = PatternType.String
+        try:
+            ipaddress.ip_address(pat)
+            pat_ty = PatternType.IpAddr
+        except ValueError:
+            pat_ty = PatternType.String
 
     return (pat, pat_ty)
 
@@ -117,6 +122,9 @@ def render_pattern(pattern, pattern_type) -> str:
         case PatternType.Cidr:
             delim = ""
             sfx = " [CIDR]"
+        case PatternType.IpAddr:
+            delim = ""
+            sfx = " [IP]"
 
     return delim + pattern + delim + sfx
 
@@ -137,6 +145,12 @@ def match_patterns(patterns: list[MxblEntry], search: str) -> MxblEntry | None:
             case PatternType.Cidr:
                 try:
                     if ipaddress.ip_address(search) in ipaddress.ip_network(pat.pattern):
+                        return pat
+                except ValueError:
+                    continue
+            case PatternType.IpAddr:
+                try:
+                    if ipaddress.ip_address(search) == ipaddress.ip_address(pat.pattern):
                         return pat
                 except ValueError:
                     continue

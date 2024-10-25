@@ -8,7 +8,9 @@ When a user registers or changes the email on their account, malachite will reso
 and AAAA records of the email address's domain. If it matches an item on the banlist, a services
 `BADMAIL` entry is added for that domain, and the account is `FDROP`ed (if registering) or
 `FREEZE`'d (if changing the email). If `FDROP`ed, the user is sent a `NOTICE`, asking them to
-try a different email address.
+try a different email address. If it does not match an item on the banlist, it is added to
+a cache with a configured TTL. If a pattern is added or edited, any cached domains that match the
+new pattern are evicted from the cache.
 
 ## Setup
 
@@ -30,6 +32,12 @@ python3 -m malachite config.toml
 ```
 usage: ADD <ip|cidr|domain|%glob%|/regex/> <reason>
   add a pattern to the mxbl. globs and regexes are case-insensitive
+```
+
+**CACHE**
+```
+usage: CACHE <SHOW|DEL> [name]
+  view or modify the clean domain cache
 ```
 
 **DEL**

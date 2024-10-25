@@ -42,6 +42,22 @@ class MxblEntry:
             last_hit=rec["last_hit"],
         )
 
+    @classmethod
+    def from_pattern(cls, pattern: str, pattern_type: PatternType | None = None) -> Self:
+        if pattern_type is None:
+            pattern, pattern_type = parse_pattern(pattern)
+        return cls(
+            id=-1,
+            pattern=pattern,
+            pattern_type=pattern_type,
+            reason="",
+            active=False,
+            added=datetime.now(UTC),
+            added_by="",
+            hits=0,
+            last_hit=None,
+        )
+
     def __str__(self) -> str:
         now = datetime.now(UTC)
         if self.last_hit is not None:
@@ -106,31 +122,24 @@ def render_pattern(pattern, pattern_type) -> str:
 
 
 def match_patterns(patterns: list[MxblEntry], search: str) -> MxblEntry | None:
-    found = None
     for pat in patterns:
         match pat.pattern_type:
             case PatternType.String:
                 # remove root domain . from both in case one doesn't have it
                 if pat.pattern.rstrip(".") == search.rstrip("."):
-                    found = pat
-                    break
+                    return pat
             case PatternType.Glob:
                 if re.search(fnmatch.translate(pat.pattern), search, flags=re.I):
-                    found = pat
-                    break
+                    return pat
             case PatternType.Regex:
                 if re.search(pat.pattern, search, flags=re.I):
-                    found = pat
-                    break
+                    return pat
             case PatternType.Cidr:
                 try:
                     if ipaddress.ip_address(search) in ipaddress.ip_network(pat.pattern):
-                        found = pat
-                        break
+                        return pat
                 except ValueError:
                     continue
-
-    return found
 
 
 def pretty_delta(d: timedelta) -> str:

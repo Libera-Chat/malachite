@@ -64,6 +64,8 @@ class Config:
     database: DatabaseConfig
 
     timeout: float
+    cache_ttl: int
+    cache_size: int
 
 
     @classmethod
@@ -89,5 +91,7 @@ class Config:
             sasl=sasl,
             oper=oper,
             database=database,
-            timeout=settings_toml.get("timeout", 5)
+            timeout=settings_toml.get("timeout", 5),
+            cache_ttl=settings_toml.get("cache_ttl", 24*60*60),
+            cache_size=settings_toml.get("cache_size", 256),
         )

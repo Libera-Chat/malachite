@@ -1,13 +1,13 @@
 import asyncio
-from datetime import UTC, datetime
+from itertools import zip_longest
 
+from cachetools import TTLCache
 from dns.asyncresolver import Resolver
 from dns.rdatatype import MX, A, AAAA
 
 import ircrobots
 from irctokens import build, Line
 from ircstates.numerics import RPL_ISUPPORT, RPL_WELCOME, RPL_YOUREOPER
-
 
 from .config import Config
 from .database import Database
@@ -24,9 +24,12 @@ class MalachiteServer(Server):
     def __init__(self, bot: ircrobots.Bot, name: str, config: Config, database: Database):
         super().__init__(bot, name, config, database)
         self.settings = Settings(database)
+
         self.resolver = Resolver()
         self.resolver.timeout = self._config.timeout
         self.resolver.lifetime = self._config.timeout
+
+        self.cleanmails = TTLCache(maxsize=self._config.cache_size, ttl=self._config.cache_ttl)
 
     # message handlers {{{
 
@@ -80,6 +83,9 @@ class MalachiteServer(Server):
         else:
             return
 
+        if domain in self.cleanmails:
+            return
+
         if (found := await self._check_domain(domain)) is not None:
             await self.database.hit(found.id)
             if found.active and self.settings.pause == "0":
@@ -113,6 +119,8 @@ class MalachiteServer(Server):
                 else:
                     self.log(f"\x0307WARN\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
                              f" (\x1D{found.full_reason}\x1D)")
+        else:
+            self.cleanmails[domain] = True
 
     # }}}
 
@@ -149,6 +157,8 @@ class MalachiteServer(Server):
             return "missing argument: <reason>"
 
         pat, pat_ty = parse_pattern(pat)
+
+        await self.cache_evict_by_pattern(pat)
 
         ret = await self.database.add(pat, pat_ty, reason, True, caller.oper)
         if ret is not None:
@@ -263,6 +273,8 @@ class MalachiteServer(Server):
             return "missing argument: <ip|domain>"
 
         pat, pat_ty = parse_pattern(pat)
+
+        await self.cache_evict_by_pattern(pat)
 
         ret = await self.database.edit_pattern(id, pat, pat_ty)
         if ret is not None:
@@ -382,6 +394,32 @@ class MalachiteServer(Server):
             return f"{domain} matches \x02{found.render_pattern()}\x02"
         return "does not match"
 
+    @command("CACHE")
+    async def _showcache(self, _: Caller, args: list[str]):
+        """
+        usage: CACHE <SHOW|DEL> [name]
+          view or modify the clean domain cache
+        """
+        try:
+            subcommand = args[0].upper()
+        except IndexError:
+            return "missing argument: subcommand <SHOW|DEL>"
+
+        match subcommand:
+            case "DEL":
+                try:
+                    name = args[1].lower()
+                except IndexError:
+                    return "missing argument: <name>"
+                if name in self.cleanmails:
+                    del self.cleanmails[name]
+                    return f"removed {name} from clean domain cache"
+                else:
+                    return f"{name} not cached"
+            case "SHOW":
+                return [self.cleanmails[i:i+8] for i in range(0, len(self.cleanmails), 8)]
+            case _:
+                return f"invalid subcommand {subcommand}"
 
     # }}}
 
@@ -396,19 +434,7 @@ class MalachiteServer(Server):
             if email change, freeze
         """
         if pattern is not None:
-            pat, pat_ty = parse_pattern(pattern)
-            entry = MxblEntry(
-                id=-1,
-                pattern=pat,
-                pattern_type=pat_ty,
-                reason="test",
-                active=False,
-                added=datetime.now(UTC),
-                added_by="test",
-                hits=-1,
-                last_hit=None
-            )
-            patterns = [entry]
+            patterns = [MxblEntry.from_pattern(pattern)]
         else:
             # get all patterns, active entries first
             patterns = await self.database.list_all(order_by="active DESC, id")
@@ -438,6 +464,11 @@ class MalachiteServer(Server):
                         break
 
         return found
+
+    async def cache_evict_by_pattern(self, pattern: str):
+        for domain in self.cleanmails:
+            if await asyncio.create_task(self._check_domain(domain, pattern)) is not None:
+                del self.cleanmails[domain]
 
 
 class Malachite(ircrobots.Bot):

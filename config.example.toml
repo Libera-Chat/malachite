@@ -1,5 +1,10 @@
 [settings]
+# DNS lookup timeout (seconds)
 timeout = 5
+# clean domain cache TTL (seconds)
+cache_ttl = 86400
+# clean domain cache maximum size
+cache_size = 256
 
 [irc]
 server = "irc.libera.chat:+6697"

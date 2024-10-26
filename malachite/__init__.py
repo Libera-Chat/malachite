@@ -1,5 +1,4 @@
 import asyncio
-from itertools import zip_longest
 
 from cachetools import TTLCache
 from dns.asyncresolver import Resolver
@@ -13,7 +12,7 @@ from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
 from .settings import Settings
-from .util import match_patterns, MxblEntry, PatternType, parse_pattern, render_pattern
+from .util import match_patterns, MxblEntry, Pattern, parse_pattern
 
 NICKSERV = "NickServ"
 
@@ -87,6 +86,8 @@ class MalachiteServer(Server):
             return
 
         if (found := await self._check_domain(domain)) is not None:
+            if not isinstance(found, MxblEntry):
+                return # should not ever happen
             await self.database.hit(found.id)
             if found.active and self.settings.pause == "0":
                 self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
@@ -156,14 +157,13 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <reason>"
 
-        pat, pat_ty = parse_pattern(pat)
+        pat = parse_pattern(pat)
 
         await self.cache_evict_by_pattern(pat)
 
-        ret = await self.database.add(pat, pat_ty, reason, True, caller.oper)
+        ret = await self.database.add(pat, reason, True, caller.oper)
         if ret is not None:
-            id, pattern, pattern_type = tuple(ret)
-            pat = render_pattern(pattern, PatternType(pattern_type))
+            id, pat = ret
             self.log(f"{caller.nick} ({caller.oper}) ADD: added pattern {id} \x02{pat}\x02 ({reason})")
             return f"added mxbl entry #{id}"
         return "adding mxbl entry failed"
@@ -183,8 +183,7 @@ class MalachiteServer(Server):
 
         ret = await self.database.delete(id)
         if ret is not None:
-            id, pattern, pattern_type, reason = tuple(ret)
-            pat = render_pattern(pattern, PatternType(pattern_type))
+            id, pat, reason = ret
             self.log(f"{caller.nick} ({caller.oper}) DEL: deleted pattern {id} \x02{pat}\x02 ({reason})")
             return f"removed mxbl entry #{id}"
         return f"no entry found for id: {id}"
@@ -248,8 +247,7 @@ class MalachiteServer(Server):
             return "missing argument: <id>"
         ret = await self.database.toggle(id)
         if ret is not None:
-            id, pattern, pattern_type, active = tuple(ret)
-            pat = render_pattern(pattern, PatternType(pattern_type))
+            id, pat, active = ret
             old, new = ("WARN", "ACTIVE") if active else ("ACTIVE", "WARN")
             self.log(f"{caller.nick} ({caller.oper}) TOGGLE: toggled pattern {id} \x02{pat}\x02: {old} -> {new}")
             return f"mxbl entry #{id} {old} -> {new}"
@@ -272,14 +270,13 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <ip|domain>"
 
-        pat, pat_ty = parse_pattern(pat)
+        pat = parse_pattern(pat)
 
         await self.cache_evict_by_pattern(pat)
 
-        ret = await self.database.edit_pattern(id, pat, pat_ty)
+        ret = await self.database.edit_pattern(id, pat)
         if ret is not None:
-            id, pattern, pattern_type = tuple(ret)
-            pat = render_pattern(pattern, PatternType(pattern_type))
+            id, pat = ret
             self.log(f"{caller.nick} ({caller.oper}) EDITPATTERN: updated pattern {id} to \x02{pat}\x02")
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -303,8 +300,7 @@ class MalachiteServer(Server):
 
         ret = await self.database.edit_reason(id, reason)
         if ret is not None:
-            id, pattern, pattern_type, reason = tuple(ret)
-            pat = render_pattern(pattern, PatternType(pattern_type))
+            id, pat, reason = ret
             self.log(f"{caller.nick} ({caller.oper}) EDITREASON: updated pattern {id} \x02{pat}\x02 reason: {reason}")
             return f"updated mxbl entry #{id}"
         return "updating mxbl entry failed"
@@ -380,7 +376,7 @@ class MalachiteServer(Server):
           test if an email or domain would match a specified pattern
         """
         try:
-            pat = args[0]
+            pat = parse_pattern(args[0])
         except IndexError:
             return "missing argument: <ip|cidr|domain|%glob%|/regex/>"
         try:
@@ -391,7 +387,7 @@ class MalachiteServer(Server):
         found = await self._check_domain(domain, pat)
 
         if found:
-            return f"{domain} matches \x02{found.render_pattern()}\x02"
+            return f"{domain} matches \x02{found}\x02"
         return "does not match"
 
     @command("CACHE")
@@ -424,7 +420,7 @@ class MalachiteServer(Server):
 
     # }}}
 
-    async def _check_domain(self, domain: str, pattern: str | None = None) -> MxblEntry | None:
+    async def _check_domain(self, domain: str, pattern: Pattern | None = None) -> MxblEntry | Pattern | None:
         """
         check if domain matches any entry
         if not found, resolve MX, A, and AAAA for domain
@@ -434,8 +430,9 @@ class MalachiteServer(Server):
             if new reg, fdrop and send notice
             if email change, freeze
         """
+        patterns: list[MxblEntry | Pattern]
         if pattern is not None:
-            patterns = [MxblEntry.from_pattern(pattern)]
+            patterns = [pattern]
         else:
             # get all patterns, active entries first
             patterns = await self.database.list_all(order_by="active DESC, id")
@@ -466,7 +463,7 @@ class MalachiteServer(Server):
 
         return found
 
-    async def cache_evict_by_pattern(self, pattern: str):
+    async def cache_evict_by_pattern(self, pattern: Pattern):
         for domain in self.cleanmails:
             if await asyncio.create_task(self._check_domain(domain, pattern)) is not None:
                 del self.cleanmails[domain]

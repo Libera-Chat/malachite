@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import asyncpg
 from asyncpg import Pool, Record
 
-from .util import MxblEntry, PatternType
+from .util import MxblEntry, Pattern, make_pattern
 
 
 @dataclass
@@ -42,7 +42,7 @@ class MxblTable(Table):
             rows = await conn.fetch(query, limit or None, offset)
         return [MxblEntry.from_record(row) for row in rows]
 
-    async def add(self, pattern: str, pattern_type: PatternType, reason: str, active: bool, added_by: str) -> Record | None:
+    async def add(self, pattern: Pattern, reason: str, active: bool, added_by: str) -> tuple[int, Pattern] | None:
         """
         add an entry
         """
@@ -52,11 +52,12 @@ class MxblTable(Table):
             VALUES ($1, $2, $3, $4, NOW()::TIMESTAMP, $5)
             RETURNING id, pattern, pattern_type
         """
-        args = [pattern, pattern_type, reason, active, added_by]
+        args = [pattern.raw, pattern.ty, reason, active, added_by]
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow(query, *args)
+            ret = await conn.fetchrow(query, *args)
+            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
 
-    async def delete(self, id: int) -> Record | None:
+    async def delete(self, id: int) -> tuple[int, Pattern, str] | None:
         """
         delete an entry
         """
@@ -66,9 +67,10 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type, reason
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow(query, id)
+            ret = await conn.fetchrow(query, id)
+            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
 
-    async def edit_pattern(self, id: int, pattern: str, pattern_type: str) -> Record | None:
+    async def edit_pattern(self, id: int, pattern: Pattern) -> tuple[int, Pattern] | None:
         """
         update the pattern of an entry
         """
@@ -79,9 +81,10 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow(query, id, pattern, pattern_type)
+            ret = await conn.fetchrow(query, id, pattern.raw, pattern.ty)
+            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
 
-    async def edit_reason(self, id: int, reason: str) -> Record | None:
+    async def edit_reason(self, id: int, reason: str) -> tuple[int, Pattern, str] | None:
         """
         update the reason of an entry
         """
@@ -92,9 +95,10 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type, reason
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow(query, id, reason)
+            ret = await conn.fetchrow(query, id, reason)
+            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
 
-    async def toggle(self, id: int) -> Record | None:
+    async def toggle(self, id: int) -> tuple[int, Pattern, bool] | None:
         """
         toggle a pattern active/warn by id
         """
@@ -105,7 +109,8 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type, active
         """
         async with self.pool.acquire() as conn:
-            return await conn.fetchrow(query, id)
+            ret = await conn.fetchrow(query, id)
+            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["active"])
 
     async def hit(self, id: int) -> int | None:
         """

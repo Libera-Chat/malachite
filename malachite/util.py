@@ -1,6 +1,7 @@
 import fnmatch
 import ipaddress
 import re
+from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 from enum import IntEnum
@@ -10,18 +11,87 @@ from asyncpg import Record
 
 
 class PatternType(IntEnum):
-    String = 0
+    Domain = 0
     Glob = 1
     Regex = 2
     Cidr = 3
     IpAddr = 4
 
 
+class Pattern(ABC):
+    __slots__ = ("raw", "pattern", "ty", "_delim", "_sfx")
+
+    def __init__(self, pattern: str):
+        self.raw = pattern
+        self.ty = getattr(PatternType, type(self).__name__)
+        self._delim = ""
+
+    def __str__(self) -> str:
+        return self._delim + self.raw + self._delim
+
+    def __repr__(self) -> str:
+        return f"<{self.ty.name} pattern {self.pattern!r} (raw: {self.raw!r})>"
+
+
+class Domain(Pattern):
+    def __init__(self, pattern: str):
+        super().__init__(pattern)
+        self.pattern = pattern.rstrip(".")
+        self._delim = "'"
+
+    def __eq__(self, value: str) -> bool:  # type: ignore
+        # remove root domain . for comparison
+        return self.pattern == value.rstrip(".")
+
+
+class Glob(Pattern):
+    def __init__(self, pattern: str):
+        super().__init__(pattern)
+        self.pattern = re.compile(fnmatch.translate(pattern), flags=re.I)
+        self._delim = "%"
+
+    def __eq__(self, value: str) -> bool:  # type: ignore
+        return self.pattern.search(value) is not None
+
+
+class Regex(Pattern):
+    def __init__(self, pattern: str):
+        super().__init__(pattern)
+        self.pattern = re.compile(pattern, flags=re.I)
+        self._delim = "/"
+
+    def __eq__(self, value: str) -> bool:  # type: ignore
+        return self.pattern.search(value) is not None
+
+
+class Cidr(Pattern):
+    def __init__(self, pattern: str):
+        super().__init__(pattern)
+        self.pattern = ipaddress.ip_network(pattern)
+
+    def __eq__(self, value: str) -> bool:  # type: ignore
+        try:
+            return ipaddress.ip_address(value) in self.pattern
+        except ValueError:
+            return super().__eq__(value)
+
+
+class IpAddr(Pattern):
+    def __init__(self, pattern: str):
+        super().__init__(pattern)
+        self.pattern = ipaddress.ip_address(pattern)
+
+    def __eq__(self, value: str) -> bool:  # type: ignore
+        try:
+            return self.pattern == ipaddress.ip_address(value)
+        except ValueError:
+            return False
+
+
 @dataclass
 class MxblEntry:
     id: int
-    pattern: str
-    pattern_type: PatternType
+    pattern: Pattern
     reason: str
     active: bool
     added: datetime
@@ -33,30 +103,13 @@ class MxblEntry:
     def from_record(cls, rec: Record) -> Self:
         return cls(
             id=rec["id"],
-            pattern=rec["pattern"],
-            pattern_type=PatternType(rec["pattern_type"]),
+            pattern=make_pattern(rec["pattern"], rec["pattern_type"]),
             reason=rec["reason"],
             active=rec["active"],
             added=rec["added"],
             added_by=rec["added_by"],
             hits=rec["hits"],
             last_hit=rec["last_hit"],
-        )
-
-    @classmethod
-    def from_pattern(cls, pattern: str, pattern_type: PatternType | None = None) -> Self:
-        if pattern_type is None:
-            pattern, pattern_type = parse_pattern(pattern)
-        return cls(
-            id=-1,
-            pattern=pattern,
-            pattern_type=pattern_type,
-            reason="",
-            active=False,
-            added=datetime.now(UTC),
-            added_by="",
-            hits=0,
-            last_hit=None,
         )
 
     def __str__(self) -> str:
@@ -70,90 +123,59 @@ class MxblEntry:
         else:
             last_hit = "\x0312never\x03"
         active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"
-        return (f"#{self.id}: \x02{self.render_pattern()}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
+        return (f"#{self.id}: \x02{self.pattern}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
                 f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
-
-    def render_pattern(self) -> str:
-        return render_pattern(self.pattern, self.pattern_type)
 
     @property
     def full_reason(self) -> str:
         return f"mxbl #{self.id} - {self.reason}"
 
 
+def make_pattern(pat: str, ty: PatternType) -> Pattern:
+    match ty:
+        case PatternType.Domain:
+            return Domain(pat)
+        case PatternType.Glob:
+            return Glob(pat)
+        case PatternType.Regex:
+            return Regex(pat)
+        case PatternType.Cidr:
+            return Cidr(pat)
+        case PatternType.IpAddr:
+            return IpAddr(pat)
 
-def parse_pattern(pat: str) -> tuple[str, PatternType]:
+
+def parse_pattern(pat: str) -> Pattern:
     if pat.startswith("%") and pat.endswith("%"):
-        pat = pat.removeprefix("%").removesuffix("%")
-        pat_ty = PatternType.Glob
+        return Glob(pat.removeprefix("%").removesuffix("%"))
 
     elif pat.startswith("/") and pat.endswith("/"):
-        pat = pat.removeprefix("/").removesuffix("/")
-        pat_ty = PatternType.Regex
+        return Regex(pat.removeprefix("/").removesuffix("/"))
 
     elif "/" in pat:
         try:
-            ipaddress.ip_network(pat)
-            pat_ty = PatternType.Cidr
+            return Cidr(pat)
         except ValueError:
-            pat_ty = PatternType.String
+            raise ValueError("invalid pattern")
 
     else:
         try:
-            ipaddress.ip_address(pat)
-            pat_ty = PatternType.IpAddr
+            return IpAddr(pat)
         except ValueError:
-            pat_ty = PatternType.String
-
-    return (pat, pat_ty)
+            return Domain(pat)
 
 
-def render_pattern(pattern, pattern_type) -> str:
-    delim = ""
-    sfx = ""
-
-    match pattern_type:
-        case PatternType.Glob:
-            delim = "%"
-        case PatternType.Regex:
-            delim = "/"
-        case PatternType.String:
-            delim = "'"
-        case PatternType.Cidr:
-            delim = ""
-            sfx = " [CIDR]"
-        case PatternType.IpAddr:
-            delim = ""
-            sfx = " [IP]"
-
-    return delim + pattern + delim + sfx
-
-
-def match_patterns(patterns: list[MxblEntry], search: str) -> MxblEntry | None:
+def match_patterns(patterns: list[MxblEntry | Pattern], search: str) -> MxblEntry | Pattern | None:
     for pat in patterns:
-        match pat.pattern_type:
-            case PatternType.String:
-                # remove root domain . from both in case one doesn't have it
-                if pat.pattern.rstrip(".") == search.rstrip("."):
+        try:
+            if isinstance(pat, MxblEntry):
+                if pat.pattern == search:
                     return pat
-            case PatternType.Glob:
-                if re.search(fnmatch.translate(pat.pattern), search, flags=re.I):
+            elif isinstance(pat, Pattern):
+                if pat == search:
                     return pat
-            case PatternType.Regex:
-                if re.search(pat.pattern, search, flags=re.I):
-                    return pat
-            case PatternType.Cidr:
-                try:
-                    if ipaddress.ip_address(search) in ipaddress.ip_network(pat.pattern):
-                        return pat
-                except ValueError:
-                    continue
-            case PatternType.IpAddr:
-                try:
-                    if ipaddress.ip_address(search) == ipaddress.ip_address(pat.pattern):
-                        return pat
-                except ValueError:
-                    continue
+        except ValueError:
+            continue
 
 
 def pretty_delta(d: timedelta) -> str:

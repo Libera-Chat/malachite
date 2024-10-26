@@ -2,6 +2,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+
 @dataclass
 class SaslConfig:
     user: str
@@ -66,7 +67,6 @@ class Config:
     timeout: float
     cache_ttl: int
     cache_size: int
-
 
     @classmethod
     def from_file(cls, fp: str | Path):

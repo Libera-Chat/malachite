@@ -11,8 +11,20 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[dependency-groups]
+dev = [
+    "asyncpg-stubs>=0.29.1",
+    "flake8>=7.1.1",
+    "mypy>=1.13.0",
+    "types-cachetools>=5.5.0.20240820",
+]
+
 [tool.setuptools.dynamic]
 version = {attr = "malachite.__version__"}
 
 [tool.pyright]
 reportPrivateImportUsage = "none"
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_no_return = false

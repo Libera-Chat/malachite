@@ -54,8 +54,8 @@ class MxblTable(Table):
         """
         args = [pattern.raw, pattern.ty, reason, active, added_by]
         async with self.pool.acquire() as conn:
-            ret = await conn.fetchrow(query, *args)
-            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
+            if (ret := await conn.fetchrow(query, *args)) is not None:
+                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
 
     async def delete(self, id: int) -> tuple[int, Pattern, str] | None:
         """
@@ -67,8 +67,8 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type, reason
         """
         async with self.pool.acquire() as conn:
-            ret = await conn.fetchrow(query, id)
-            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
+            if (ret := await conn.fetchrow(query, id)) is not None:
+                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
 
     async def edit_pattern(self, id: int, pattern: Pattern) -> tuple[int, Pattern] | None:
         """
@@ -81,8 +81,8 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type
         """
         async with self.pool.acquire() as conn:
-            ret = await conn.fetchrow(query, id, pattern.raw, pattern.ty)
-            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
+            if (ret := await conn.fetchrow(query, id, pattern.raw, pattern.ty)) is not None:
+                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
 
     async def edit_reason(self, id: int, reason: str) -> tuple[int, Pattern, str] | None:
         """
@@ -95,8 +95,8 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type, reason
         """
         async with self.pool.acquire() as conn:
-            ret = await conn.fetchrow(query, id, reason)
-            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
+            if (ret := await conn.fetchrow(query, id, reason)) is not None:
+                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
 
     async def toggle(self, id: int) -> tuple[int, Pattern, bool] | None:
         """
@@ -109,8 +109,8 @@ class MxblTable(Table):
             RETURNING id, pattern, pattern_type, active
         """
         async with self.pool.acquire() as conn:
-            ret = await conn.fetchrow(query, id)
-            return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["active"])
+            if (ret := await conn.fetchrow(query, id)) is not None:
+                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["active"])
 
     async def hit(self, id: int) -> int | None:
         """

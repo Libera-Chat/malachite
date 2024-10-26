@@ -28,7 +28,7 @@ class MalachiteServer(Server):
         self.resolver.timeout = self._config.timeout
         self.resolver.lifetime = self._config.timeout
 
-        self.cleanmails = TTLCache(maxsize=self._config.cache_size, ttl=self._config.cache_ttl)
+        self.cleanmails: TTLCache[str, bool] = TTLCache(maxsize=self._config.cache_size, ttl=self._config.cache_ttl)
 
     # message handlers {{{
 
@@ -62,7 +62,7 @@ class MalachiteServer(Server):
             case "VERSION":
                 resp = f"VERSION malachite v{__version__}"
             case _:
-                resp = None
+                resp = ""
 
         if resp:
             self.send(build("NOTICE", [line.hostmask.nickname, f"\x01{resp}\x01"]))
@@ -78,7 +78,7 @@ class MalachiteServer(Server):
         elif "VERIFY:EMAILCHG:" in msg:
             account = msg[0]
             domain = msg[-1].split("@")[1].rstrip(")")
-            drop = False # freeze instead
+            drop = False  # freeze instead
         else:
             return
 
@@ -87,14 +87,15 @@ class MalachiteServer(Server):
 
         if (found := await self._check_domain(domain)) is not None:
             if not isinstance(found, MxblEntry):
-                return # should not ever happen
+                return  # should not ever happen
             await self.database.hit(found.id)
             if found.active and self.settings.pause == "0":
                 self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
                 if drop:
                     self.send_message(NICKSERV, f"FDROP {account}")
                 else:
-                    self.send_message(NICKSERV, (f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})"))
+                    self.send_message(NICKSERV,
+                                      f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})")
 
             whois = await self.send_whois(account)
             if whois:
@@ -149,15 +150,15 @@ class MalachiteServer(Server):
           add a pattern to the mxbl. globs and regexes are case-insensitive
         """
         try:
-            pat = args[0]
+            pat = parse_pattern(args[0])
         except IndexError:
             return "missing argument: <ip|domain>"
+        except ValueError as e:
+            return f"error: {e}"
         try:
             reason = " ".join(args[1:])
         except IndexError:
             return "missing argument: <reason>"
-
-        pat = parse_pattern(pat)
 
         await self.cache_evict_by_pattern(pat)
 
@@ -266,11 +267,11 @@ class MalachiteServer(Server):
         except IndexError:
             return "missing argument: <id>"
         try:
-            pat = args[1]
+            pat = parse_pattern(args[1])
         except IndexError:
             return "missing argument: <ip|domain>"
-
-        pat = parse_pattern(pat)
+        except ValueError as e:
+            return f"error: {e}"
 
         await self.cache_evict_by_pattern(pat)
 

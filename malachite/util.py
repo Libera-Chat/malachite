@@ -5,7 +5,7 @@ from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 from enum import IntEnum
-from typing import Self
+from typing import Any, Self
 
 from asyncpg import Record
 
@@ -23,6 +23,7 @@ class Pattern(ABC):
 
     def __init__(self, pattern: str):
         self.raw = pattern
+        self.pattern: Any = None
         self.ty = getattr(PatternType, type(self).__name__)
         self._delim = ""
 
@@ -115,11 +116,11 @@ class MxblEntry:
     def __str__(self) -> str:
         now = datetime.now(UTC)
         if self.last_hit is not None:
-            last_hit = now - self.last_hit
-            if last_hit.total_seconds() < (6 * 60 * 60):
-                last_hit = f"\x0307{pretty_delta(last_hit)}\x03"
+            last = now - self.last_hit
+            if last.total_seconds() < (6 * 60 * 60):
+                last_hit = f"\x0307{pretty_delta(last)}\x03"
             else:
-                last_hit = pretty_delta(last_hit)
+                last_hit = pretty_delta(last)
         else:
             last_hit = "\x0312never\x03"
         active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"

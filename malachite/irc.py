@@ -24,6 +24,7 @@ class Caller:
 
 MsgHandler: TypeAlias = Callable[[Any, Line], Coroutine[Any, Any, None]]
 
+
 class OnMessage:
     def __init__(self, command: str, predicate: Callable[[Line], bool] | None = None):
         """
@@ -49,10 +50,12 @@ class OnMessage:
     def __repr__(self) -> str:
         return f"<message handler {self.name!r} for {self.command!r}>"
 
+
 on_message = OnMessage
 
 
 CmdHandler: TypeAlias = Callable[[Any, Caller, list[str] | str], Coroutine[Any, Any, str]]
+
 
 class Command:
     def __init__(self, name: str):
@@ -79,6 +82,7 @@ class Command:
     def __repr__(self) -> str:
         return f"<command handler for {self.name!r}>"
 
+
 command = Command
 
 
@@ -95,7 +99,9 @@ class Server(ircrobots.Server):
             v.name.lower(): v for _, v in
             inspect.getmembers(type(self), predicate=lambda m: isinstance(m, Command))
         }
-        self._msg_handlers = [h for _, h in inspect.getmembers(type(self), predicate=lambda m: isinstance(m, OnMessage))]
+        self._msg_handlers = [
+            h for _, h in inspect.getmembers(type(self), predicate=lambda m: isinstance(m, OnMessage))
+        ]
 
         print("[*] registered command handlers:")
         print("\t" + ", ".join(self._cmd_handlers.keys()))

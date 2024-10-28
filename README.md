@@ -31,7 +31,9 @@ python3 -m malachite config.toml
 **ADD**
 ```
 usage: ADD <ip|cidr|domain|%glob%|/regex/> <reason>
-  add a pattern to the mxbl. globs and regexes are case-insensitive
+  add a pattern to the mxbl. globs and regexes are case-insensitive.
+  Patterns are added at WARN status level. Use SET <id> LETHAL to activate
+  a pattern fully.
 ```
 
 **CACHE**

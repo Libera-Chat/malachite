@@ -457,7 +457,7 @@ class MalachiteServer(Server):
                         else:
                             continue
 
-                        if (found := match_patterns(patterns, domain)):
+                        if (found := match_patterns(patterns, rec_name)):
                             break
                     if found:
                         break

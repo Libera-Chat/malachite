@@ -65,20 +65,6 @@ class MxblTable(Table):
             if (ret := await conn.fetchrow(query, *args)) is not None:
                 return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
 
-    async def edit_pattern(self, id: int, pattern: Pattern) -> tuple[int, Pattern] | None:
-        """
-        update the pattern of an entry
-        """
-        query = """
-            UPDATE mxbl
-            SET pattern = $2, pattern_type = $3
-            WHERE id = $1
-            RETURNING id, pattern, pattern_type
-        """
-        async with self.pool.acquire() as conn:
-            if (ret := await conn.fetchrow(query, id, pattern.raw, pattern.ty)) is not None:
-                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
-
     async def edit_reason(self, id: int, reason: str) -> tuple[int, Pattern, str] | None:
         """
         update the reason of an entry

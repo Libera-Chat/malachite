@@ -273,7 +273,8 @@ class MalachiteServer(Server):
     async def _edit_pattern(self, caller: Caller, args: list[str]):
         """
         usage: EDITPATTERN <id> <ip|cidr|domain|%glob%|/regex/>
-          update the pattern of an entry by id
+          update the pattern of an entry by id. This will copy the reason and status of the old entry
+          but use the provided pattern. The old entry will be disabled.
         """
         try:
             id = int(args[0])
@@ -288,13 +289,18 @@ class MalachiteServer(Server):
         except ValueError as e:
             return f"error: {e}"
 
+        if (old := await self.database.get(id)) is None:
+            return "updating mxbl entry failed: entry does not exist"
+
         await self.cache_evict_by_pattern(pat)
 
-        ret = await self.database.edit_pattern(id, pat)
+        ret = await self.database.add(pat, old.reason, old.status, added_by=caller.oper)
         if ret is not None:
-            id, pat = ret
-            self.log(f"{caller.nick} ({caller.oper}) EDITPATTERN: updated pattern {id} to \x02{pat}\x02")
-            return f"updated mxbl entry #{id}"
+            new_id, pat = ret
+            await self.database.set_status(old.id, PatternStatus.Off)
+            self.log(f"{caller.nick} ({caller.oper}) EDITPATTERN: updated pattern {id} to {new_id}"
+                     f" (\x02{old.pattern}\x02 -> \x02{pat}\x02)")
+            return f"updated mxbl entry #{id} to #{new_id}"
         return "updating mxbl entry failed"
 
     @command("EDITREASON")

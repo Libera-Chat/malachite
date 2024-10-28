@@ -43,7 +43,9 @@ usage: CACHE <SHOW|DEL> [name]
 **EDITPATTERN**
 ```
 usage: EDITPATTERN <id> <ip|cidr|domain|%glob%|/regex/>
-  update the pattern of an entry by id
+  update the pattern of an entry by id. This will copy the reason and
+  status of the old entry but use the provided pattern. The old entry
+  will be disabled.
 ```
 
 **EDITREASON**

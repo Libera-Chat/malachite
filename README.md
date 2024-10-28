@@ -40,12 +40,6 @@ usage: CACHE <SHOW|DEL> [name]
   view or modify the clean domain cache
 ```
 
-**DEL**
-```
-usage: DEL <id>
-  remove a pattern from the mxbl
-```
-
 **EDITPATTERN**
 ```
 usage: EDITPATTERN <id> <ip|cidr|domain|%glob%|/regex/>
@@ -73,8 +67,21 @@ usage: HELP [command]
 **LIST**
 ```
 usage: LIST [limit = 0] [offset = 0]
-  list mxbl entries up to limit (default: no limit),
+  list enabled mxbl entries up to limit (default: no limit),
   starting at offset (default: index 0)
+```
+
+**LISTALL**
+```
+usage: LISTALL [limit = 0] [offset = 0]
+  list all mxbl entries up to limit (default: no limit),
+  starting at offset (default: index 0)
+```
+
+**SET**
+```
+usage: SET <id> <status>
+  set an entry's status (LETHAL, WARN, OFF)
 ```
 
 **SETTINGS**
@@ -96,12 +103,6 @@ usage: TEST <email|domain>
 ```
 usage: TESTPAT <ip|cidr|domain|%glob%|/regex/> <email|domain>
   test if an email or domain would match a specified pattern
-```
-
-**TOGGLE**
-```
-usage: TOGGLE <id>
-  make an entry active or warn
 ```
 
 ## Patterns

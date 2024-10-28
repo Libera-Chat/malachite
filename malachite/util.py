@@ -5,9 +5,25 @@ from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 from enum import IntEnum
-from typing import Any, Self
+from typing import Any, Self, Sequence
 
 from asyncpg import Record
+
+
+class PatternStatus(IntEnum):
+    Off = 0
+    Warn = 1
+    Lethal = 2
+
+    def pretty(self) -> str:
+        match self:
+            case self.Off:
+                colour = "14"
+            case self.Warn:
+                colour = "07"
+            case self.Lethal:
+                colour = "05"
+        return f"\x03{colour}{self.name.upper()}\x03"
 
 
 class PatternType(IntEnum):
@@ -94,7 +110,7 @@ class MxblEntry:
     id: int
     pattern: Pattern
     reason: str
-    active: bool
+    status: PatternStatus
     added: datetime
     added_by: str
     hits: int
@@ -106,7 +122,7 @@ class MxblEntry:
             id=rec["id"],
             pattern=make_pattern(rec["pattern"], rec["pattern_type"]),
             reason=rec["reason"],
-            active=rec["active"],
+            status=PatternStatus(rec["status"]),
             added=rec["added"],
             added_by=rec["added_by"],
             hits=rec["hits"],
@@ -123,9 +139,9 @@ class MxblEntry:
                 last_hit = pretty_delta(last)
         else:
             last_hit = "\x0312never\x03"
-        active = "\x0313ACTIVE\x03" if self.active else "\x0311WARN\x03"
         return (f"#{self.id}: \x02{self.pattern}\x02 (\x1D{self.reason}\x1D) added {pretty_delta(now - self.added)}"
-                f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit}) [{active}]")
+                f" by \x02{self.added_by}\x02 with \x02{self.hits}\x02 hits (last hit: {last_hit})"
+                f" [{self.status.pretty()}]")
 
     @property
     def full_reason(self) -> str:
@@ -166,7 +182,7 @@ def parse_pattern(pat: str) -> Pattern:
             return Domain(pat)
 
 
-def match_patterns(patterns: list[MxblEntry | Pattern], search: str) -> MxblEntry | Pattern | None:
+def match_patterns(patterns: Sequence[MxblEntry | Pattern], search: str) -> MxblEntry | Pattern | None:
     for pat in patterns:
         try:
             if isinstance(pat, MxblEntry):

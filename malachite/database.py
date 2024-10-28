@@ -1,10 +1,12 @@
 import asyncio
+from asyncio import Task
 from dataclasses import dataclass
+from typing import Sequence
 
 import asyncpg
 from asyncpg import Pool, Record
 
-from .util import MxblEntry, Pattern, make_pattern
+from .util import MxblEntry, Pattern, PatternStatus, make_pattern
 
 
 @dataclass
@@ -18,7 +20,7 @@ class MxblTable(Table):
         get one entry by id
         """
         query = """
-            SELECT id, pattern, pattern_type, reason, active, added, added_by, hits, last_hit
+            SELECT id, pattern, pattern_type, reason, status, added, added_by, hits, last_hit
             FROM mxbl
             WHERE id = $1
         """
@@ -27,13 +29,19 @@ class MxblTable(Table):
         if row is not None:
             return MxblEntry.from_record(row)
 
-    async def list_all(self, limit: int = 0, offset: int = 0, order_by: str = "id") -> list[MxblEntry]:
+    async def list_(self, limit: int = 0, offset: int = 0, all: bool = False, order_by: str = "id") -> Sequence[MxblEntry]:
         """
         list all entries up to limit (optional, default all) from an offset (optional, default index 0)
         """
+        if all:
+            where = ""
+        else:
+            where = "WHERE status != 0"
+
         query = f"""
-            SELECT id, pattern, pattern_type, reason, active, added, added_by, hits, last_hit
+            SELECT id, pattern, pattern_type, reason, status, added, added_by, hits, last_hit
             FROM mxbl
+            {where}
             ORDER BY {order_by}
             LIMIT $1
             OFFSET $2
@@ -42,33 +50,20 @@ class MxblTable(Table):
             rows = await conn.fetch(query, limit or None, offset)
         return [MxblEntry.from_record(row) for row in rows]
 
-    async def add(self, pattern: Pattern, reason: str, active: bool, added_by: str) -> tuple[int, Pattern] | None:
+    async def add(self, pattern: Pattern, reason: str, status: PatternStatus, added_by: str) -> tuple[int, Pattern] | None:
         """
         add an entry
         """
         query = """
             INSERT INTO mxbl
-            (pattern, pattern_type, reason, active, added, added_by)
+            (pattern, pattern_type, reason, status, added, added_by)
             VALUES ($1, $2, $3, $4, NOW()::TIMESTAMP, $5)
             RETURNING id, pattern, pattern_type
         """
-        args = [pattern.raw, pattern.ty, reason, active, added_by]
+        args = [pattern.raw, pattern.ty, reason, status, added_by]
         async with self.pool.acquire() as conn:
             if (ret := await conn.fetchrow(query, *args)) is not None:
                 return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]))
-
-    async def delete(self, id: int) -> tuple[int, Pattern, str] | None:
-        """
-        delete an entry
-        """
-        query = """
-            DELETE FROM mxbl
-            WHERE id = $1
-            RETURNING id, pattern, pattern_type, reason
-        """
-        async with self.pool.acquire() as conn:
-            if (ret := await conn.fetchrow(query, id)) is not None:
-                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
 
     async def edit_pattern(self, id: int, pattern: Pattern) -> tuple[int, Pattern] | None:
         """
@@ -98,19 +93,20 @@ class MxblTable(Table):
             if (ret := await conn.fetchrow(query, id, reason)) is not None:
                 return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["reason"])
 
-    async def toggle(self, id: int) -> tuple[int, Pattern, bool] | None:
+    async def set_status(self, id: int, new: PatternStatus) -> tuple[int, Pattern, PatternStatus] | None:
         """
-        toggle a pattern active/warn by id
+        set a pattern's status by id
         """
+        # TODO
         query = """
             UPDATE mxbl
-            SET active = NOT active
+            SET status = $2
             WHERE id = $1
-            RETURNING id, pattern, pattern_type, active
+            RETURNING id, pattern, pattern_type, status
         """
         async with self.pool.acquire() as conn:
-            if (ret := await conn.fetchrow(query, id)) is not None:
-                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), ret["active"])
+            if (ret := await conn.fetchrow(query, id, new)) is not None:
+                return (ret["id"], make_pattern(ret["pattern"], ret["pattern_type"]), PatternStatus(ret["status"]))
 
     async def hit(self, id: int) -> int | None:
         """
@@ -127,16 +123,6 @@ class MxblTable(Table):
 
 
 class SettingsTable(Table):
-    async def get(self, name: str) -> Record | None:
-        query = """
-            SELECT name, value
-            FROM settings
-            WHERE name = $1
-            LIMIT 1
-        """
-        async with self.pool.acquire() as conn:
-            return await conn.fetchrow(query, name)
-
     async def get_all(self) -> dict[str, str]:
         query = """
             SELECT name, value
@@ -173,22 +159,29 @@ class Database:
         pool = await asyncpg.create_pool(user=user, password=password, host=host, database=database)
         return cls(pool)  # type: ignore
 
-    def get_setting(self, name: str):
-        return asyncio.create_task(self.settings.get(name))
-
     def get_all_settings(self):
         return asyncio.create_task(self.settings.get_all())
 
     def set_setting(self, name: str, value: str):
         return asyncio.create_task(self.settings.set_(name, value))
 
-    def __getattr__(self, attr):
-        """
-        proxy the methods on MxblTable and wrap them in asyncio tasks
-        to make awaiting database queries non-blocking
-        """
-        if hasattr(self.mxbl, attr):
-            def wrapper(*args, **kwargs):
-                return asyncio.create_task(getattr(self.mxbl, attr)(*args, **kwargs))
-            return wrapper
-        raise AttributeError(attr)
+    def get(self, id: int) -> Task[MxblEntry | None]:
+        return asyncio.create_task(self.mxbl.get(id))
+
+    def list_(self, limit: int = 0, offset: int = 0, all: bool = False, order_by: str = "id") -> Task[Sequence[MxblEntry]]:
+        return asyncio.create_task(self.mxbl.list_(limit, offset, all, order_by))
+
+    def add(self, pattern: Pattern, reason: str, status: PatternStatus, added_by: str) -> Task[tuple[int, Pattern] | None]:
+        return asyncio.create_task(self.mxbl.add(pattern, reason, status, added_by))
+
+    def edit_pattern(self, id: int, pattern: Pattern) -> Task[tuple[int, Pattern] | None]:
+        return asyncio.create_task(self.mxbl.edit_pattern(id, pattern))
+
+    def edit_reason(self, id: int, reason: str) -> Task[tuple[int, Pattern, str] | None]:
+        return asyncio.create_task(self.mxbl.edit_reason(id, reason))
+
+    def set_status(self, id: int, new: PatternStatus) -> Task[tuple[int, Pattern, PatternStatus] | None]:
+        return asyncio.create_task(self.mxbl.set_status(id, new))
+
+    def hit(self, id: int) -> Task[int | None]:
+        return asyncio.create_task(self.mxbl.hit(id))

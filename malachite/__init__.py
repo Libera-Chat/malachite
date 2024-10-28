@@ -12,7 +12,7 @@ from .config import Config
 from .database import Database
 from .irc import Caller, command, on_message, Server
 from .settings import Settings
-from .util import match_patterns, MxblEntry, Pattern, parse_pattern
+from .util import PatternStatus, match_patterns, MxblEntry, Pattern, parse_pattern
 
 NICKSERV = "NickServ"
 
@@ -74,11 +74,11 @@ class MalachiteServer(Server):
         if "REGISTER:" in msg:
             account = msg[0]
             domain = msg[-1].split("@")[1]
-            drop = True
+            is_reg = True
         elif "VERIFY:EMAILCHG:" in msg:
             account = msg[0]
             domain = msg[-1].split("@")[1].rstrip(")")
-            drop = False  # freeze instead
+            is_reg = False
         else:
             return
 
@@ -87,40 +87,41 @@ class MalachiteServer(Server):
 
         if (found := await self._check_domain(domain)) is not None:
             if not isinstance(found, MxblEntry):
-                return  # should not ever happen
+                return  # should never happen, appeasing mypy
+
             await self.database.hit(found.id)
-            if found.active and self.settings.pause == "0":
+
+            paused = self.settings.pause != "0"
+
+            if found.status == PatternStatus.Lethal and not paused:
                 self.send_message(NICKSERV, f"BADMAIL ADD *@{domain} {found.full_reason}")
-                if drop:
+
+                if is_reg:
                     self.send_message(NICKSERV, f"FDROP {account}")
-                else:
-                    self.send_message(NICKSERV,
-                                      f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})")
-
-            whois = await self.send_whois(account)
-            if whois:
-                hostmask = f"{whois.nickname}!{whois.username}@{whois.hostname}"
-            else:
-                hostmask = "<unknown user>"
-
-            if found.active and self.settings.pause == "0":
-                if drop:
-                    self.log(f"\x0305BAD\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
-                             f" (\x1D{found.full_reason}\x1D)")
                     self.send(build("NOTICE", [
                         account, ("Your account has been dropped, please register it again with a valid email"
                                   " address (no disposable/temporary email)")
                     ]))
                 else:
-                    self.log(f"\x0305BAD\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
-                             f" (\x1D{found.full_reason}\x1D)")
-            else:
-                if drop:
-                    self.log(f"\x0307WARN\x03: {hostmask} registered {account} with \x02*@{domain}\x02"
-                             f" (\x1D{found.full_reason}\x1D)")
+                    self.send_message(NICKSERV,
+                                      f"FREEZE {account} ON changed email to *@{domain} ({found.full_reason})")
+
+            if found.status != PatternStatus.Off:
+                if whois := await self.send_whois(account):
+                    hostmask = f"{whois.nickname}!{whois.username}@{whois.hostname}"
                 else:
-                    self.log(f"\x0307WARN\x03: {hostmask} changed email on {account} to \x02*@{domain}\x02"
-                             f" (\x1D{found.full_reason}\x1D)")
+                    hostmask = "<unknown user>"
+
+                if is_reg:
+                    msg = f"registered {account} with"
+                else:
+                    msg = f"changed email on {account} to"
+
+                self.log(
+                    ("[PAUSED] " if paused else "")
+                    + f"{found.status.pretty()}: {hostmask} {msg} \x02*@{domain}\x02 (\x1D{found.full_reason}\x1D)"
+                )
+
         else:
             self.cleanmails[domain] = True
 
@@ -162,32 +163,12 @@ class MalachiteServer(Server):
 
         await self.cache_evict_by_pattern(pat)
 
-        ret = await self.database.add(pat, reason, True, caller.oper)
+        ret = await self.database.add(pat, reason, PatternStatus.Warn, caller.oper)
         if ret is not None:
             id, pat = ret
             self.log(f"{caller.nick} ({caller.oper}) ADD: added pattern {id} \x02{pat}\x02 ({reason})")
             return f"added mxbl entry #{id}"
         return "adding mxbl entry failed"
-
-    @command("DEL")
-    async def _del(self, caller: Caller, args: list[str]):
-        """
-        usage: DEL <id>
-          remove a pattern from the mxbl
-        """
-        try:
-            id = int(args[0])
-        except ValueError:
-            return "invalid id (not an integer)"
-        except IndexError:
-            return "missing argument: <id>"
-
-        ret = await self.database.delete(id)
-        if ret is not None:
-            id, pat, reason = ret
-            self.log(f"{caller.nick} ({caller.oper}) DEL: deleted pattern {id} \x02{pat}\x02 ({reason})")
-            return f"removed mxbl entry #{id}"
-        return f"no entry found for id: {id}"
 
     @command("GET")
     async def _get(self, _: Caller, args: list[str]):
@@ -211,7 +192,7 @@ class MalachiteServer(Server):
     async def _list(self, _: Caller, args: list[str]):
         """
         usage: LIST [limit = 0] [offset = 0]
-          list mxbl entries up to limit (default: no limit), starting at offset (default: index 0)
+          list active mxbl entries up to limit (default: no limit), starting at offset (default: index 0)
         """
         try:
             limit = int(args[0])
@@ -229,29 +210,63 @@ class MalachiteServer(Server):
             return "invalid offset (not an integer >= 0)"
         except IndexError:
             offset = 0
-        rows = await self.database.list_all(limit, offset)
+        rows = await self.database.list_(limit, offset)
         if rows:
             return [str(r) for r in rows]
         return "no entries found"
 
-    @command("TOGGLE")
-    async def _toggle(self, caller: Caller, args: list[str]):
+    @command("LISTALL")
+    async def _listall(self, _: Caller, args: list[str]):
         """
-        usage: TOGGLE <id>
-          make an entry active or warn
+        usage: LIST [limit = 0] [offset = 0]
+          list all mxbl entries up to limit (default: no limit), starting at offset (default: index 0)
         """
+        try:
+            limit = int(args[0])
+            if limit < 0:
+                raise ValueError
+        except ValueError:
+            return "invalid limit (not an integer >= 0)"
+        except IndexError:
+            limit = 0
+        try:
+            offset = int(args[1])
+            if offset < 0:
+                raise ValueError
+        except ValueError:
+            return "invalid offset (not an integer >= 0)"
+        except IndexError:
+            offset = 0
+        rows = await self.database.list_(limit, offset, all=True)
+        if rows:
+            return [str(r) for r in rows]
+        return "no entries found"
+
+    @command("SET")
+    async def _set(self, caller: Caller, args: list[str]):
+        """
+        usage: SET <id> <status>
+          set an entry's status (LETHAL, WARN, OFF)
+        """
+        statuses = {x.name.upper(): x for x in PatternStatus}
         try:
             id = int(args[0])
         except ValueError:
             return "invalid id (not an integer)"
         except IndexError:
             return "missing argument: <id>"
-        ret = await self.database.toggle(id)
+        try:
+            new = statuses[args[1].upper()]
+        except KeyError:
+            return f"invalid status (not one of: {', '.join(statuses)})"
+        except IndexError:
+            return "missing argument: <status>"
+
+        ret = await self.database.set_status(id, new)
         if ret is not None:
-            id, pat, active = ret
-            old, new = ("WARN", "ACTIVE") if active else ("ACTIVE", "WARN")
-            self.log(f"{caller.nick} ({caller.oper}) TOGGLE: toggled pattern {id} \x02{pat}\x02: {old} -> {new}")
-            return f"mxbl entry #{id} {old} -> {new}"
+            id, pat, new = ret
+            self.log(f"{caller.nick} ({caller.oper}) SET: set pattern {id} \x02{pat}\x02 to {new.name.upper()}")
+            return f"mxbl entry #{id} set to {new.pretty()}"
         return f"no entry found for id: {id}"
 
     @command("EDITPATTERN")
@@ -431,12 +446,11 @@ class MalachiteServer(Server):
             if new reg, fdrop and send notice
             if email change, freeze
         """
-        patterns: list[MxblEntry | Pattern]
         if pattern is not None:
             patterns = [pattern]
         else:
-            # get all patterns, active entries first
-            patterns = await self.database.list_all(order_by="active DESC, id")
+            # get all active patterns, lethal entries first
+            patterns = await self.database.list_(order_by="status DESC, id")
 
         if not (found := match_patterns(patterns, domain)):
             queue = [(domain, MX), (domain, A), (domain, AAAA)]

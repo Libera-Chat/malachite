@@ -68,7 +68,7 @@ class Glob(Pattern):
         self._delim = "%"
 
     def __eq__(self, value: str) -> bool:  # type: ignore
-        return self.pattern.search(value) is not None
+        return self.pattern.search(value.rstrip(".")) is not None
 
 
 class Regex(Pattern):
@@ -78,7 +78,7 @@ class Regex(Pattern):
         self._delim = "/"
 
     def __eq__(self, value: str) -> bool:  # type: ignore
-        return self.pattern.search(value) is not None
+        return self.pattern.search(value.rstrip(".")) is not None
 
 
 class Cidr(Pattern):

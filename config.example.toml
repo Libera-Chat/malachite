@@ -5,6 +5,8 @@ timeout = 5
 cache_ttl = 86400
 # clean domain cache maximum size
 cache_size = 256
+# verify the certificate chain when connecting with TLS
+tls_verify = true
 
 [irc]
 server = "irc.libera.chat:+6697"

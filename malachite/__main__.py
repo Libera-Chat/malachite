@@ -2,7 +2,7 @@ import asyncio
 from argparse import ArgumentParser
 
 from ircrobots.params import ConnectionParams, SASLUserPass
-from ircrobots.security import TLSVerifyChain
+from ircrobots.security import TLSNoVerify, TLSVerifyChain
 
 from . import Malachite
 from .config import Config
@@ -23,7 +23,11 @@ async def main(config: Config):
     params.realname = config.realname
     params.password = config.password
     params.sasl = SASLUserPass(config.sasl.user, config.sasl.password)
-    params.tls = TLSVerifyChain(client_keypair=(str(config.oper.cert), str(config.oper.key)))
+    if config.tls_verify:
+        TLS = TLSVerifyChain
+    else:
+        TLS = TLSNoVerify
+    params.tls = TLS(client_keypair=(str(config.oper.cert), str(config.oper.key)))
 
     autojoin = config.channels
     if config.log:

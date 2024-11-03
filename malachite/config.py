@@ -67,6 +67,7 @@ class Config:
     timeout: float
     cache_ttl: int
     cache_size: int
+    tls_verify: bool
 
     @classmethod
     def from_file(cls, fp: str | Path):
@@ -94,4 +95,5 @@ class Config:
             timeout=settings_toml.get("timeout", 5),
             cache_ttl=settings_toml.get("cache_ttl", 24*60*60),
             cache_size=settings_toml.get("cache_size", 256),
+            tls_verify=settings_toml.get("tls_verify", True)
         )

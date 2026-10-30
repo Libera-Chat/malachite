@@ -93,6 +93,7 @@ class Server(ircrobots.Server):
         super().__init__(bot, name)
         self.desired_caps.add(CAP_OPER)
         self._init = False
+        self._autojoined = False
         self._config = config
         self.database = database
         self._cmd_handlers = {
@@ -108,6 +109,15 @@ class Server(ircrobots.Server):
         print("[*] registered message handlers:")
         for h in self._msg_handlers:
             print(f"\t{h.command} => {h.name}")
+
+    async def _do_autojoin(self):
+        if not self._autojoined:
+            autojoin = self._config.channels
+            if self._config.log:
+                autojoin.append(self._config.log)
+            print(f"[*] joining channels: {', '.join(autojoin)}")
+            await self._batch_joins(autojoin)
+            self._autojoined = True
 
     def set_throttle(self, rate: int, time: float):
         # turn off throttling

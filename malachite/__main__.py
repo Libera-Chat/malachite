@@ -29,11 +29,6 @@ async def main(config: Config):
         TLS = TLSNoVerify
     params.tls = TLS(client_keypair=(str(config.oper.cert), str(config.oper.key)))
 
-    autojoin = config.channels
-    if config.log:
-        autojoin.append(config.log)
-    params.autojoin = autojoin
-
     await bot.add_server("malachite", params)
     await bot.run()
 

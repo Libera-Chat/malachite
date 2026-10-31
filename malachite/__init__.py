@@ -6,7 +6,7 @@ from dns.rdatatype import MX, A, AAAA
 
 import ircrobots
 from irctokens import build, Line
-from ircstates.numerics import RPL_ISUPPORT, RPL_UMODEIS, RPL_WELCOME, RPL_YOUREOPER
+from ircstates.numerics import ERR_NOMOTD, RPL_ENDOFMOTD, RPL_ISUPPORT, RPL_WELCOME, RPL_YOUREOPER
 
 from .config import Config
 from .database import Database
@@ -49,16 +49,15 @@ class MalachiteServer(Server):
             print(f"[*] enabling bot mode (+{botmode})")
             self.send(build("MODE", [self.nickname, f"+{botmode}"]))
 
-    @on_message(RPL_UMODEIS)
+    @on_message(RPL_ENDOFMOTD)
     async def on_umodeis(self, _):
         """do autojoin late, after post-registration, to ensure botmode is enabled before joining channels"""
         await self._do_autojoin()
 
-    @on_message("MODE")
+    @on_message(ERR_NOMOTD)
     async def on_umode(self, line: Line):
         """do autojoin late, after post-registration, to ensure botmode is enabled before joining channels"""
-        if self.is_me(line.params[0]):
-            await self._do_autojoin()
+        await self._do_autojoin()
 
     @on_message(RPL_YOUREOPER)
     async def on_youreoper(self, _):
